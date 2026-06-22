@@ -3140,15 +3140,17 @@ function computeScore(assignment, rows, cols){
   const seatOf = {};
   assignment.forEach((sid, idx)=>{ if(sid) seatOf[sid]=idx; });
 
+  // 離したい：絶対条件（隣接したら超大ペナルティ）
   state.constraints.separate.forEach(([a,b])=>{
     if(seatOf[a]!=null && seatOf[b]!=null){
-      if(neighbors(seatOf[a],rows,cols).includes(seatOf[b])) score += 1000;
+      if(neighbors(seatOf[a],rows,cols).includes(seatOf[b])) score += 100000;
     }
   });
 
+  // 近づけたい：周囲8マスに隣接していなければ大ペナルティ（1人でも達成）
   state.constraints.together.forEach(([a,b])=>{
     if(seatOf[a]!=null && seatOf[b]!=null){
-      if(!neighbors(seatOf[a],rows,cols).includes(seatOf[b])) score += 40;
+      if(!neighbors(seatOf[a],rows,cols).includes(seatOf[b])) score += 500;
     }
   });
 
@@ -3348,13 +3350,13 @@ function computeWarnings(assignment, rows, cols){
   state.constraints.separate.forEach(([a,b])=>{
     if(seatOf[a]!=null && seatOf[b]!=null && neighbors(seatOf[a],rows,cols).includes(seatOf[b])){
       const sa=studentById(a), sb=studentById(b);
-      warnings.push(`「${sa?(sa.name||sa.yomi||'?'):'?'}」と「${sb?(sb.name||sb.yomi||'?'):'?'}」が隣り合っています（離せませんでした）`);
+      warnings.push(`⚠️「${sa?(sa.name||sa.yomi||'?'):'?'}」と「${sb?(sb.name||sb.yomi||'?'):'?'}」が隣り合っています（他の条件と競合したため離せませんでした）`);
     }
   });
   state.constraints.together.forEach(([a,b])=>{
     if(seatOf[a]!=null && seatOf[b]!=null && !neighbors(seatOf[a],rows,cols).includes(seatOf[b])){
       const sa=studentById(a), sb=studentById(b);
-      warnings.push(`「${sa?(sa.name||sa.yomi||'?'):'?'}」と「${sb?(sb.name||sb.yomi||'?'):'?'}」を近づけられませんでした`);
+      warnings.push(`⚠️「${sa?(sa.name||sa.yomi||'?'):'?'}」と「${sb?(sb.name||sb.yomi||'?'):'?'}」を近づけられませんでした（他の条件と競合した可能性があります）`);
     }
   });
   assignment.forEach((sid, idx)=>{
