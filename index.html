@@ -460,9 +460,12 @@
   .seat.manual-empty-tap{cursor:pointer;}
   .seat .seat-type-label{
     font-size:9px;
-    color:#9a8f7d;
+    color:#5a7a9a;
     margin-top:1px;
+    display:block;
   }
+  .seat.female .seat-type-label{ color:#9a4050; }
+  .seat:not(.male):not(.female) .seat-type-label{ color:#9a8f7d; }
   .chat-bubble{
     padding:10px 12px;
     border-radius:14px;
@@ -1055,6 +1058,17 @@
             <button class="btn-add" onclick="addVisionRestriction()">追加</button>
           </div>
           <div class="pair-list" id="visionList"></div>
+        </div>
+
+        <h2>席を固定する（任意）</h2>
+        <div class="card">
+          <div class="help">特定の児童を特定の席に固定します。固定した席はAIの自動生成でも変更されません。生徒指導上の理由がなくても使えます。</div>
+          <div class="pair-form" style="flex-wrap:wrap;gap:8px;">
+            <select id="fixedSeatStudent" style="flex:1;min-width:120px;"></select>
+            <select id="fixedSeatSeat" style="flex:1;min-width:120px;"></select>
+            <button class="btn-add" onclick="addFixedSeat()">固定する</button>
+          </div>
+          <div class="pair-list" id="fixedSeatList"></div>
         </div>
 
         <h2>生徒指導上の理由（完全固定）</h2>
@@ -2628,6 +2642,8 @@ function renderRules(){
   renderPairList('separate');
   renderPairList('together');
   renderVisionList();
+  renderFixedSeatSelects();
+  renderFixedSeatList();
   renderDisciplineList();
   renderPrevSeatStatus();
 }
@@ -2774,6 +2790,75 @@ function renderVisionList(){
     return `<div class="pair-item" style="background:#e8f0ea;">
       <span class="label">👁 ${escapeHtml(s.name||s.yomi||"?")}　→　前から${v.maxRow}列以内</span>
       <button class="btn-x" onclick="removeVisionRestriction('${v.studentId}')">×</button>
+    </div>`;
+  }).join('');
+}
+
+/* ---------- 席の固定（任意） ---------- */
+function renderFixedSeatSelects(){
+  const stuSel = document.getElementById('fixedSeatStudent');
+  const seatSel = document.getElementById('fixedSeatSeat');
+  if(!stuSel || !seatSel) return;
+
+  const sorted = [...state.students].sort((a,b)=>(a.number||0)-(b.number||0));
+  stuSel.innerHTML = '<option value="">児童を選択</option>' +
+    sorted.map(s=>`<option value="${s.id}">${escapeHtml((s.number?s.number+'. ':'')+s.name)}</option>`).join('');
+
+  const rows = state.grid.rows, cols = state.grid.cols;
+  const fixed = state.constraints.fixedSeats || {};
+  const usedSeats = new Set(Object.values(fixed));
+  seatSel.innerHTML = '<option value="">席を選択</option>';
+  for(let i=0;i<rows*cols;i++){
+    if(state.seatTemplate[i]==='disabled') continue;
+    if(usedSeats.has(i)) continue;
+    const row = Math.floor(i/cols)+1;
+    const col = (i%cols)+1;
+    const tpl = state.seatTemplate[i]||'any';
+    const tplLabel = tpl==='male'?'（男子席）':tpl==='female'?'（女子席）':'';
+    seatSel.innerHTML += `<option value="${i}">${row}行${col}列${tplLabel}</option>`;
+  }
+}
+
+function addFixedSeat(){
+  const stuSel  = document.getElementById('fixedSeatStudent');
+  const seatSel = document.getElementById('fixedSeatSeat');
+  const sid   = stuSel.value;
+  const seatIdx = parseInt(seatSel.value);
+  if(!sid || isNaN(seatIdx)){ showToast('児童と席を選択してください','error'); return; }
+  if(!state.constraints.fixedSeats) state.constraints.fixedSeats = {};
+  // 同じ児童がすでに別の席に固定されていれば上書き
+  state.constraints.fixedSeats[sid] = seatIdx;
+  renderFixedSeatList();
+  renderFixedSeatSelects();
+  saveState();
+}
+
+function removeFixedSeat(sid){
+  if(state.constraints.fixedSeats) delete state.constraints.fixedSeats[sid];
+  renderFixedSeatList();
+  renderFixedSeatSelects();
+  saveState();
+}
+
+function renderFixedSeatList(){
+  const el = document.getElementById('fixedSeatList');
+  if(!el) return;
+  const fixed = state.constraints.fixedSeats || {};
+  const cols  = state.grid.cols;
+  if(Object.keys(fixed).length===0){
+    el.innerHTML = '<div class="help" style="margin-top:8px;">固定された児童はいません</div>';
+    return;
+  }
+  el.innerHTML = Object.entries(fixed).map(([sid, seatIdx])=>{
+    const s = studentById(sid);
+    if(!s) return '';
+    const row = Math.floor(seatIdx/cols)+1;
+    const col = (seatIdx%cols)+1;
+    const tpl = state.seatTemplate[seatIdx]||'any';
+    const tplLabel = tpl==='male'?'（男子席）':tpl==='female'?'（女子席）':'';
+    return `<div class="list-row">
+      <span class="main">${escapeHtml(s.name||s.yomi)} → ${row}行${col}列${tplLabel}</span>
+      <button class="btn-x" onclick="removeFixedSeat('${sid}')">×</button>
     </div>`;
   }).join('');
 }
@@ -4316,11 +4401,22 @@ function renderSurveySeatGrid(){
 
   let html = '';
   for(let i=0;i<total;i++){
-    if(state.seatTemplate[i]==='disabled'){
-      html += '<div class="seat disabled"><span class="seat-name">✕ つかわない</span></div>';
+    const tpl = state.seatTemplate[i] || 'any';
+
+    // 使わない席 → 「選べない」表示
+    if(tpl==='disabled'){
+      html += '<div class="seat disabled"><span class="seat-name">選べない</span></div>';
       continue;
     }
+
+    // 男子席・女子席のクラス
+    const genderCls = tpl==='male' ? ' male' : tpl==='female' ? ' female' : '';
+
     let inner = `<span class="seat-pos">${seatLabelHiragana(i, cols)}</span>`;
+    // 男子席・女子席ラベルを小さく表示
+    if(tpl==='male')   inner += '<span class="seat-type-label">男子席</span>';
+    if(tpl==='female') inner += '<span class="seat-type-label">女子席</span>';
+
     let selected = false;
     if(mode==='rowCircle'){
       const row = Math.floor(i/cols);
@@ -4335,7 +4431,7 @@ function renderSurveySeatGrid(){
         selected = true;
       }
     }
-    html += `<div class="seat interactive ${selected?'selected':''}" onclick="onSeatTap(${i})">${inner}</div>`;
+    html += `<div class="seat interactive${genderCls} ${selected?'selected':''}" onclick="onSeatTap(${i})">${inner}</div>`;
   }
   grid.innerHTML = html;
 }
