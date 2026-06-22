@@ -930,6 +930,12 @@
             <button class="btn-secondary" onclick="copySurveyLink()">コピー</button>
           </div>
           <div class="help" id="copyLinkMsg" style="display:none;color:var(--ok);">リンクをコピーしました</div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap;">
+            <span id="surveyStatusBadge" style="font-size:13px;font-weight:700;padding:4px 12px;border-radius:999px;"></span>
+            <button class="btn-secondary" id="surveyCloseBtn" onclick="closeSurvey()" style="background:#e74c3c;color:#fff;">🔒 締め切る</button>
+            <button class="btn-secondary" id="surveyReopenBtn" onclick="reopenSurvey()" style="display:none;">📢 再配布する（やり直し）</button>
+          </div>
+          <div class="help" id="surveyStatusHelp" style="margin-top:6px;"></div>
         </div>
 
         <h2>教室のサイズ</h2>
@@ -1145,6 +1151,11 @@
               <label style="display:block;margin-top:6px;font-size:13px;">説明文（空欄でデフォルト使用）
                 <input type="text" id="sq_good_help" placeholder="ずっと なかよしの こを えらんでください" oninput="saveSurveySettings()">
               </label>
+              <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;">
+                最大選択人数
+                <input type="number" id="sq_good_max" min="1" max="30" placeholder="制限なし" style="width:90px;text-align:center;" oninput="saveSurveySettings()">
+                <span style="color:#9a8f7d;font-size:12px;">人まで（空欄で制限なし）</span>
+              </label>
             </div>
           </div>
 
@@ -1163,6 +1174,11 @@
               <label style="display:block;margin-top:6px;font-size:13px;">説明文（空欄でデフォルト使用）
                 <input type="text" id="sq_want_help" placeholder="もっと なかよく なりたい こを えらんでください" oninput="saveSurveySettings()">
               </label>
+              <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;">
+                最大選択人数
+                <input type="number" id="sq_want_max" min="1" max="30" placeholder="制限なし" style="width:90px;text-align:center;" oninput="saveSurveySettings()">
+                <span style="color:#9a8f7d;font-size:12px;">人まで（空欄で制限なし）</span>
+              </label>
             </div>
           </div>
 
@@ -1180,6 +1196,14 @@
               </label>
               <label style="display:block;margin-top:6px;font-size:13px;">説明文（空欄でデフォルト使用）
                 <input type="text" id="sq_avoid_help" placeholder="えらんだ こと ちかくに ならないように せんせいが きを つけます" oninput="saveSurveySettings()">
+              </label>
+              <div class="help" style="background:#fdf3f2;border:1px solid #e07888;border-radius:8px;padding:8px 10px;margin-top:6px;font-size:12px;">
+                ⚠️ 児童画面には必ず「とくに きになる こが いない ばあいは えらばないように」という注意文が自動表示されます。
+              </div>
+              <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;">
+                最大選択人数
+                <input type="number" id="sq_avoid_max" min="1" max="30" placeholder="制限なし" style="width:90px;text-align:center;" oninput="saveSurveySettings()">
+                <span style="color:#9a8f7d;font-size:12px;">人まで（空欄で制限なし）</span>
               </label>
             </div>
           </div>
@@ -2067,6 +2091,17 @@ async function initPublicSurvey(classId){
   if(!state.surveySettings.questions) state.surveySettings.questions = defaultSurveySettings().questions;
   ensureSeatTemplate();
 
+  // 締め切りチェック
+  if(state.surveySettings.surveyClosed){
+    document.getElementById('publicSurveyForm').innerHTML =
+      '<div class="card" style="text-align:center;padding:24px 16px;">' +
+      '<div style="font-size:40px;margin-bottom:12px;">🔒</div>' +
+      '<h2 style="border:none;padding-left:0;">アンケートは締め切られました</h2>' +
+      '<div class="help" style="margin:0;">先生がアンケートを締め切りました。<br>回答できません。先生に確認してください。</div>' +
+      '</div>';
+    return;
+  }
+
   const header = document.getElementById('publicSurveyTeacherLabel');
   if(header){
     if(res.teacherName){
@@ -2938,6 +2973,9 @@ function renderSurveySettings(){
       const el = document.getElementById(`sq_${k}_${f}`);
       if(el && qData[f]!==undefined) el.value = qData[f];
     });
+    // 最大選択人数を復元
+    const maxEl = document.getElementById(`sq_${k}_max`);
+    if(maxEl) maxEl.value = (qData.max!=null) ? qData.max : '';
   });
 
   // 座席希望モードのラジオ
@@ -2966,13 +3004,19 @@ function saveSurveySettings(){
       const el = document.getElementById(`sq_${k}_${f}`);
       if(el) q[k][f] = el.value;
     });
+    // 最大選択人数（good/want/avoid のみ）
+    const maxEl = document.getElementById(`sq_${k}_max`);
+    if(maxEl){
+      const v = parseInt(maxEl.value);
+      q[k].max = (maxEl.value==='' || isNaN(v)) ? null : v;
+    }
   });
 
   // 座席希望モード
   const modeEl = document.querySelector('#seatPrefModeRadios input[name=seatPrefMode]:checked');
   if(modeEl){
     q.seat.mode = modeEl.value;
-    state.surveySettings.seatPrefMode = modeEl.value; // 旧互換
+    state.surveySettings.seatPrefMode = modeEl.value;
   }
 
   saveState();
@@ -3147,10 +3191,36 @@ function computeScore(assignment, rows, cols){
     }
   });
 
-  // 近づけたい：周囲8マスに隣接していなければ大ペナルティ（1人でも達成）
+  // 近づけたい：児童ごとに「1人でも周囲8マスにいれば達成」で判定
+  // 相互に希望し合っている（A→B かつ B→A）ペアは優先度2倍
+  const togetherByStudent = {}; // uid → [近づけたい相手uid]
   state.constraints.together.forEach(([a,b])=>{
-    if(seatOf[a]!=null && seatOf[b]!=null){
-      if(!neighbors(seatOf[a],rows,cols).includes(seatOf[b])) score += 500;
+    if(!togetherByStudent[a]) togetherByStudent[a]=[];
+    if(!togetherByStudent[b]) togetherByStudent[b]=[];
+    togetherByStudent[a].push(b);
+    togetherByStudent[b].push(a);
+  });
+
+  // 各ペアのスコア計算
+  state.constraints.together.forEach(([a,b])=>{
+    if(seatOf[a]==null || seatOf[b]==null) return;
+    const nbA = neighbors(seatOf[a], rows, cols);
+    const nbB = neighbors(seatOf[b], rows, cols);
+
+    // Aの近づけたい相手のうち、周囲8マスにいる人が1人でもいるか
+    const aHasSomeone = togetherByStudent[a].some(x=>seatOf[x]!=null && nbA.includes(seatOf[x]));
+    // Bの近づけたい相手のうち、周囲8マスにいる人が1人でもいるか
+    const bHasSomeone = togetherByStudent[b].some(x=>seatOf[x]!=null && nbB.includes(seatOf[x]));
+
+    // 相互希望かどうか（A→BかつB→A）
+    const mutual = togetherByStudent[a].includes(b) && togetherByStudent[b].includes(a);
+    const multiplier = mutual ? 3 : 1; // 相互希望は3倍優先
+
+    // AとBが隣接していない場合
+    if(!nbA.includes(seatOf[b])){
+      // Aがすでに他の誰か近づけたい人と隣接していれば軽いペナルティ
+      if(!aHasSomeone) score += 500 * multiplier;
+      else             score += 50  * multiplier;
     }
   });
 
@@ -3353,10 +3423,35 @@ function computeWarnings(assignment, rows, cols){
       warnings.push(`⚠️「${sa?(sa.name||sa.yomi||'?'):'?'}」と「${sb?(sb.name||sb.yomi||'?'):'?'}」が隣り合っています（他の条件と競合したため離せませんでした）`);
     }
   });
+  // 近づけたい：その児童の近づけたい相手が誰も周囲8マスにいない場合のみ警告
+  const togetherByStudentW = {};
   state.constraints.together.forEach(([a,b])=>{
-    if(seatOf[a]!=null && seatOf[b]!=null && !neighbors(seatOf[a],rows,cols).includes(seatOf[b])){
-      const sa=studentById(a), sb=studentById(b);
-      warnings.push(`⚠️「${sa?(sa.name||sa.yomi||'?'):'?'}」と「${sb?(sb.name||sb.yomi||'?'):'?'}」を近づけられませんでした（他の条件と競合した可能性があります）`);
+    if(!togetherByStudentW[a]) togetherByStudentW[a]=[];
+    if(!togetherByStudentW[b]) togetherByStudentW[b]=[];
+    togetherByStudentW[a].push(b);
+    togetherByStudentW[b].push(a);
+  });
+  const warnedTogether = new Set();
+  state.constraints.together.forEach(([a,b])=>{
+    if(seatOf[a]==null || seatOf[b]==null) return;
+    // A視点：Aの近づけたい相手が誰も周囲8マスにいない場合のみ警告（1回だけ）
+    if(!warnedTogether.has(a)){
+      const nbA = neighbors(seatOf[a], rows, cols);
+      const aHasSomeone = (togetherByStudentW[a]||[]).some(x=>seatOf[x]!=null && nbA.includes(seatOf[x]));
+      if(!aHasSomeone){
+        const sa = studentById(a);
+        warnings.push(`⚠️「${sa?(sa.name||sa.yomi||'?'):'?'}」の近づけたい友達が周囲8マスに誰もいません`);
+        warnedTogether.add(a);
+      }
+    }
+    if(!warnedTogether.has(b)){
+      const nbB = neighbors(seatOf[b], rows, cols);
+      const bHasSomeone = (togetherByStudentW[b]||[]).some(x=>seatOf[x]!=null && nbB.includes(seatOf[x]));
+      if(!bHasSomeone){
+        const sb = studentById(b);
+        warnings.push(`⚠️「${sb?(sb.name||sb.yomi||'?'):'?'}」の近づけたい友達が周囲8マスに誰もいません`);
+        warnedTogether.add(b);
+      }
     }
   });
   assignment.forEach((sid, idx)=>{
@@ -4138,7 +4233,9 @@ function renderStudentSurvey(){
     const h = document.getElementById('h_friendGood');
     const d = document.getElementById('d_friendGood');
     if(h) h.textContent = q.good.label || getDefaultText('good','label');
-    if(d) d.textContent = q.good.help  || getDefaultText('good','help');
+    const maxGood = q.good.max ? parseInt(q.good.max) : null;
+    const helpGood = q.good.help || getDefaultText('good','help');
+    if(d) d.textContent = helpGood + (maxGood ? `（さいだい${maxGood}人まで）` : '');
   }
 
   // ③ 仲良くなりたい子
@@ -4148,7 +4245,9 @@ function renderStudentSurvey(){
     const h = document.getElementById('h_friendWant');
     const d = document.getElementById('d_friendWant');
     if(h) h.textContent = q.want.label || getDefaultText('want','label');
-    if(d) d.textContent = q.want.help  || getDefaultText('want','help');
+    const maxWant = q.want.max ? parseInt(q.want.max) : null;
+    const helpWant = q.want.help || getDefaultText('want','help');
+    if(d) d.textContent = helpWant + (maxWant ? `（さいだい${maxWant}人まで）` : '');
   }
 
   // ④ ちかくではないほうがいい子
@@ -4158,7 +4257,11 @@ function renderStudentSurvey(){
     const h = document.getElementById('h_friendAvoid');
     const d = document.getElementById('d_friendAvoid');
     if(h) h.textContent = q.avoid.label || getDefaultText('avoid','label');
-    if(d) d.textContent = q.avoid.help  || getDefaultText('avoid','help');
+    const maxAvoid = q.avoid.max ? parseInt(q.avoid.max) : null;
+    const helpAvoid = q.avoid.help || getDefaultText('avoid','help');
+    if(d) d.innerHTML =
+      escapeHtml(helpAvoid + (maxAvoid ? `（さいだい${maxAvoid}人まで）` : '')) +
+      '<br><span style="color:var(--danger);font-size:12px;font-weight:700;">⚠️ クラスのみんなが なかよく すごせることが たいせつです。とくに きになる こが いない ばあいは えらばないように しましょう。</span>';
   }
 
   // ⑤ 前の席
@@ -4283,14 +4386,29 @@ function renderFriendChecklist(){
 
 function toggleFriendCat(elId, id, checked){
   const map = {
-    friendListGood:  surveyFriendsGood,
-    friendListWant:  surveyFriendsWant,
-    friendListAvoid: surveyFriendsAvoid
+    friendListGood:  {set: surveyFriendsGood,  key: 'good'},
+    friendListWant:  {set: surveyFriendsWant,   key: 'want'},
+    friendListAvoid: {set: surveyFriendsAvoid,  key: 'avoid'}
   };
-  const set = map[elId];
-  if(!set) return;
-  if(checked) set.add(id);
-  else set.delete(id);
+  const entry = map[elId];
+  if(!entry) return;
+  const {set, key} = entry;
+
+  if(checked){
+    // 最大選択人数チェック
+    const q = state.surveySettings && state.surveySettings.questions && state.surveySettings.questions[key];
+    const max = q && q.max ? parseInt(q.max) : null;
+    if(max && set.size >= max){
+      // チェックを戻す
+      const el = document.querySelector(`#${elId} input[value="${id}"]`);
+      if(el) el.checked = false;
+      showToast(`${max}人まで選べます`, 'error', 2000);
+      return;
+    }
+    set.add(id);
+  }else{
+    set.delete(id);
+  }
 }
 
 /* ---------- voice input ---------- */
@@ -4414,6 +4532,60 @@ function renderSurveyLink(){
   if(!currentTeacher) return;
   const url = location.origin + location.pathname + '?class=' + (currentTeacher.uid || currentTeacher.teacherId || '');
   document.getElementById('surveyLinkInput').value = url;
+  renderSurveyStatus();
+}
+
+function renderSurveyStatus(){
+  const closed = !!(state.surveySettings && state.surveySettings.surveyClosed);
+  const badge  = document.getElementById('surveyStatusBadge');
+  const help   = document.getElementById('surveyStatusHelp');
+  const closeBtn  = document.getElementById('surveyCloseBtn');
+  const reopenBtn = document.getElementById('surveyReopenBtn');
+  if(!badge) return;
+  if(closed){
+    badge.textContent  = '🔒 締め切り中';
+    badge.style.cssText= 'font-size:13px;font-weight:700;padding:4px 12px;border-radius:999px;background:#f8d7da;color:#721c24;';
+    if(help)   help.textContent = '現在、児童はアンケートに回答できません。「再配布する」を押すと回答を受け付けます。';
+    if(closeBtn)  closeBtn.style.display  = 'none';
+    if(reopenBtn) reopenBtn.style.display = '';
+  }else{
+    badge.textContent  = '✅ 受付中';
+    badge.style.cssText= 'font-size:13px;font-weight:700;padding:4px 12px;border-radius:999px;background:#d4edda;color:#155724;';
+    if(help)   help.textContent = '現在、児童はアンケートに回答できます。回答が集まったら「締め切る」を押してください。';
+    if(closeBtn)  closeBtn.style.display  = '';
+    if(reopenBtn) reopenBtn.style.display = 'none';
+  }
+}
+
+async function closeSurvey(){
+  if(!await dlgConfirm('アンケートを締め切ります。\n児童はアンケートに回答できなくなります。よろしいですか？', '締め切る', true)) return;
+  if(!state.surveySettings) state.surveySettings = defaultSurveySettings();
+  state.surveySettings.surveyClosed = true;
+  renderSurveyStatus();
+  saveState();
+  showToast('アンケートを締め切りました', 'ok');
+}
+
+async function reopenSurvey(){
+  const choice = await showDialog('アンケートを再配布', 'アンケートをやり直しますか？', [
+    {label:'キャンセル', cls:'dialog-cancel', value:null},
+    {label:'回答を残して再開', cls:'dialog-ok', value:'keep'},
+    {label:'回答をリセットして再開', cls:'dialog-danger', value:'reset'},
+  ]);
+  if(!choice) return;
+  if(!state.surveySettings) state.surveySettings = defaultSurveySettings();
+  state.surveySettings.surveyClosed = false;
+  if(choice==='reset'){
+    // GASのアンケート結果もクリア
+    await callApi('clearSurveyResponses', {token: authToken});
+    state.surveyResults = [];
+    renderSurveyResults();
+    showToast('回答をリセットしてアンケートを再開しました', 'ok');
+  }else{
+    showToast('アンケートを再開しました（回答は引き継ぎ）', 'ok');
+  }
+  renderSurveyStatus();
+  saveState();
 }
 
 function copySurveyLink(){
