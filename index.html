@@ -784,7 +784,10 @@
   <div class="board">
     <h1>🐸 席かえーる</h1>
     <p id="boardSub">先生用ログイン</p>
-    <div id="saveIndicator" style="display:none;"></div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-top:4px;">
+      <div id="saveIndicator" style="display:none;"></div>
+      <button id="manualSaveBtn" onclick="saveState()" style="display:none;font-size:12px;padding:5px 14px;border-radius:20px;border:none;background:var(--chalk-green);color:#fff;cursor:pointer;font-weight:700;">💾 変更を保存</button>
+    </div>
   </div>
 
   <!-- ===================== 認証画面 ===================== -->
@@ -2071,6 +2074,7 @@ async function doLogout(){
   document.getElementById('studentArea').hidden = true;
   document.getElementById('authScreens').hidden = false;
   document.getElementById('boardSub').textContent = '先生用ログイン';
+  document.getElementById('manualSaveBtn').style.display = 'none';
   showAuthScreen('login');
 }
 
@@ -2107,6 +2111,7 @@ async function startApp(){
 
   renderAll();
   switchMode('teacher');
+  document.getElementById('manualSaveBtn').style.display = 'inline-block';
 }
 
 /* ====================== 児童アンケート（公開リンク） ====================== */
