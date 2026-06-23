@@ -2132,6 +2132,9 @@ async function initPublicSurvey(classId){
   const ss = res.surveySettings || {};
   state.surveySettings = Object.assign(defaultSurveySettings(), ss);
   if(!state.surveySettings.questions) state.surveySettings.questions = defaultSurveySettings().questions;
+  // 指定席情報を反映（fixedSeatsはconstraints内）
+  if(!state.constraints) state.constraints = defaultState().constraints;
+  state.constraints.fixedSeats = res.fixedSeats || {};
   ensureSeatTemplate();
 
   // 締め切りチェック
@@ -4575,22 +4578,33 @@ function renderSurveySeatGrid(){
   const mode = getSeatMode();
   grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
 
-  // 表示言語（surveyTextMode）
+  // 表示言語
   const textMode = (state.surveySettings && state.surveySettings.surveyTextMode) || 'yomi';
   const isKanji  = textMode === 'kanji';
   const labelCannotSelect = isKanji ? '選べません' : 'えらべません';
   const labelMale   = isKanji ? '男子席' : 'だんしせき';
   const labelFemale = isKanji ? '女子席' : 'じょしせき';
 
-  // 指定席マップ（席index → 固定済み）
+  // 指定席マップ
   const fixedSeats = new Set(Object.values(state.constraints.fixedSeats||{}).map(Number));
+
+  // 回答中の児童の性別
+  const selfId = document.getElementById('surveyStudentSelect') && document.getElementById('surveyStudentSelect').value;
+  const selfStudent = selfId ? state.students.find(s=>s.id===selfId) : null;
+  const selfGender = selfStudent ? selfStudent.gender : null; // 'male'|'female'|'none'|null
 
   let html = '';
   for(let i=0;i<total;i++){
     const tpl = state.seatTemplate[i] || 'any';
 
-    // 選べない席（使わない・指定席）→ 全て同じ表示
-    if(tpl==='disabled' || fixedSeats.has(i)){
+    // 性別チェック：自分の性別と違う指定席は選べない
+    const genderMismatch = selfGender && selfGender!=='none' && (
+      (tpl==='male' && selfGender==='female') ||
+      (tpl==='female' && selfGender==='male')
+    );
+
+    // 選べない席（使わない・指定席・性別不一致）→ 全て同じ表示
+    if(tpl==='disabled' || fixedSeats.has(i) || genderMismatch){
       const genderCls = tpl==='male'?' male':tpl==='female'?' female':'';
       html += `<div class="seat${genderCls} disabled">
         <span class="seat-name" style="font-size:10px;">${labelCannotSelect}</span>
@@ -4618,6 +4632,17 @@ function renderSurveySeatGrid(){
 }
 
 function onSeatTap(idx){
+  // 性別チェック（二重防衛）
+  const tpl = state.seatTemplate[idx] || 'any';
+  const fixedSeats = new Set(Object.values(state.constraints.fixedSeats||{}).map(Number));
+  const selfId = document.getElementById('surveyStudentSelect') && document.getElementById('surveyStudentSelect').value;
+  const selfStudent = selfId ? state.students.find(s=>s.id===selfId) : null;
+  const selfGender = selfStudent ? selfStudent.gender : null;
+  const genderMismatch = selfGender && selfGender!=='none' && (
+    (tpl==='male' && selfGender==='female') || (tpl==='female' && selfGender==='male')
+  );
+  if(tpl==='disabled' || fixedSeats.has(idx) || genderMismatch) return;
+
   const mode = getSeatMode();
   const cols = state.grid.cols;
   if(mode==='rowCircle'){
@@ -4625,11 +4650,8 @@ function onSeatTap(idx){
     surveyRowChoices[row] = (surveyRowChoices[row]===idx) ? undefined : idx;
   }else if(mode==='top3'){
     const pos = surveyRanked.indexOf(idx);
-    if(pos>=0){
-      surveyRanked.splice(pos,1);
-    }else if(surveyRanked.length<3){
-      surveyRanked.push(idx);
-    }
+    if(pos>=0){ surveyRanked.splice(pos,1); }
+    else if(surveyRanked.length<3){ surveyRanked.push(idx); }
   }
   renderSurveySeatGrid();
 }
