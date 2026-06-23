@@ -4585,25 +4585,33 @@ function renderSurveySeatGrid(){
   const labelMale   = isKanji ? '男子席' : 'だんしせき';
   const labelFemale = isKanji ? '女子席' : 'じょしせき';
 
+  // 回答中の児童
+  const selfEl = document.getElementById('surveyStudentSelect');
+  const selfId = selfEl ? selfEl.value : '';
+  const selfStudent = selfId ? state.students.find(s=>s.id===selfId) : null;
+  const selfGender  = selfStudent ? selfStudent.gender : null;
+
+  // 児童未選択の場合はグリッドを非表示にしてメッセージ表示
+  if(!selfId || !selfStudent){
+    const msg = isKanji ? 'まず上の「あなたのなまえ」から名前を選んでください。' : 'まず うえの「あなたの なまえ」から なまえを えらんでください。';
+    grid.innerHTML = `<div style="grid-column:1/-1;padding:16px;text-align:center;font-size:13px;color:var(--text-sub);">${msg}</div>`;
+    return;
+  }
+
   // 指定席マップ
   const fixedSeats = new Set(Object.values(state.constraints.fixedSeats||{}).map(Number));
-
-  // 回答中の児童の性別
-  const selfId = document.getElementById('surveyStudentSelect') && document.getElementById('surveyStudentSelect').value;
-  const selfStudent = selfId ? state.students.find(s=>s.id===selfId) : null;
-  const selfGender = selfStudent ? selfStudent.gender : null; // 'male'|'female'|'none'|null
 
   let html = '';
   for(let i=0;i<total;i++){
     const tpl = state.seatTemplate[i] || 'any';
 
-    // 性別チェック：自分の性別と違う指定席は選べない
+    // 性別チェック
     const genderMismatch = selfGender && selfGender!=='none' && (
-      (tpl==='male' && selfGender==='female') ||
+      (tpl==='male'   && selfGender==='female') ||
       (tpl==='female' && selfGender==='male')
     );
 
-    // 選べない席（使わない・指定席・性別不一致）→ 全て同じ表示
+    // 選べない席（使わない・指定席・性別不一致）
     if(tpl==='disabled' || fixedSeats.has(i) || genderMismatch){
       const genderCls = tpl==='male'?' male':tpl==='female'?' female':'';
       html += `<div class="seat${genderCls} disabled">
