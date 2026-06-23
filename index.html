@@ -1503,69 +1503,86 @@
 
     <h2 id="publicSurveyTeacherLabel" style="display:none;text-align:center;"></h2>
 
-    <div class="card student-select-card">
-      <h2 style="text-align:center;">あなたの なまえ</h2>
-      <select id="surveyStudentSelect" onchange="onSurveyStudentChange()"></select>
+    <!-- ===== ページ1：名前を選ぶ ===== -->
+    <div id="surveyPage1">
+      <div class="card student-select-card">
+        <h2 style="text-align:center;">あなたの なまえ</h2>
+        <select id="surveyStudentSelect"></select>
+      </div>
+      <div class="result-actions" style="margin-top:12px;">
+        <button class="btn-primary" style="width:100%;font-size:18px;padding:14px;" onclick="surveyGoPage2()">つぎへ →</button>
+      </div>
     </div>
 
-    <div id="surveySeatSection">
-      <h2 id="seatPrefHeading">せきの きぼう</h2>
+    <!-- ===== ページ2：アンケート内容 ===== -->
+    <div id="surveyPage2" hidden>
+
+      <!-- 選んだ名前を表示 -->
+      <div class="card" style="text-align:center;padding:10px 16px;">
+        <span id="surveyPage2Name" style="font-size:16px;font-weight:700;"></span>
+        <button class="btn-secondary" style="font-size:12px;margin-left:10px;" onclick="surveyGoPage1()">← なまえを えらびなおす</button>
+      </div>
+
+      <div id="surveySeatSection">
+        <h2 id="seatPrefHeading">せきの きぼう</h2>
+        <div class="card">
+          <div class="help" id="seatPrefHelp"></div>
+          <div class="blackboard-label">⬛ こくばん（きょうしつの まえ）</div>
+          <div class="seat-grid" id="surveySeatGrid"></div>
+        </div>
+      </div>
+
+      <div id="section_friendGood">
+      <h2 id="h_friendGood">なかの よい こ</h2>
       <div class="card">
-        <div class="help" id="seatPrefHelp"></div>
-        <div class="blackboard-label">⬛ こくばん（きょうしつの まえ）</div>
-        <div class="seat-grid" id="surveySeatGrid"></div>
+        <div class="help" id="d_friendGood">ずっと なかよしの こを えらんでください（いくつでも えらべます）。</div>
+        <div class="friend-list" id="friendListGood"></div>
       </div>
-    </div>
-
-    <div id="section_friendGood">
-    <h2 id="h_friendGood">なかの よい こ</h2>
-    <div class="card">
-      <div class="help" id="d_friendGood">ずっと なかよしの こを えらんでください（いくつでも えらべます）。</div>
-      <div class="friend-list" id="friendListGood"></div>
-    </div>
-    </div>
-
-    <div id="section_friendWant">
-    <h2 id="h_friendWant">なかよく なりたい こ</h2>
-    <div class="card">
-      <div class="help" id="d_friendWant">もっと なかよく なりたい こを えらんでください（いくつでも えらべます）。</div>
-      <div class="friend-list" id="friendListWant"></div>
-    </div>
-    </div>
-
-    <div id="section_friendAvoid">
-    <h2 id="h_friendAvoid">ちかくではないほうがいい こ</h2>
-    <div class="card">
-      <div class="help" id="d_friendAvoid">ちかくに なると きになる こを えらんでください。せんせいだけが みます。（いくつでも えらべます）</div>
-      <div class="friend-list" id="friendListAvoid"></div>
-    </div>
-    </div>
-
-    <div id="section_prev">
-    <h2>まえの せきについて</h2>
-    <div class="card">
-      <div class="check-row">
-        <input type="checkbox" id="surveyWantPrev">
-        <label for="surveyWantPrev" id="label_prev">まえの せきが いい</label>
       </div>
-    </div>
-    </div>
 
-    <div id="section_msg">
-    <h2 id="h_msg">せんせいに つたえたいこと</h2>
-    <div class="card">
-      <div class="help" id="d_msg">こまっていることや、せきについての きもちなどを じゆうに かいてください。</div>
-      <div class="message-row">
-        <textarea id="surveyMessage" placeholder="（じゆうに かいてください）"></textarea>
-        <button class="mic-btn" id="micBtn" onclick="startVoiceInput()" title="おんせい にゅうりょく">🎤</button>
+      <div id="section_friendWant">
+      <h2 id="h_friendWant">なかよく なりたい こ</h2>
+      <div class="card">
+        <div class="help" id="d_friendWant">もっと なかよく なりたい こを えらんでください（いくつでも えらべます）。</div>
+        <div class="friend-list" id="friendListWant"></div>
       </div>
-    </div>
-    </div>
+      </div>
 
-    <div class="result-actions">
-      <button class="btn-primary" style="width:100%;" onclick="submitSurvey()">📤 かいとうを おくる</button>
-    </div>
-    <div class="help" style="text-align:center;" id="surveySubmitHelp">「おくる」を おすと、かいとうが せんせいに とどきます。</div>
+      <div id="section_friendAvoid">
+      <h2 id="h_friendAvoid">ちかくではないほうがいい こ</h2>
+      <div class="card">
+        <div class="help" id="d_friendAvoid">ちかくに なると きになる こを えらんでください。せんせいだけが みます。（いくつでも えらべます）</div>
+        <div class="friend-list" id="friendListAvoid"></div>
+      </div>
+      </div>
+
+      <div id="section_prev">
+      <h2>まえの せきについて</h2>
+      <div class="card">
+        <div class="check-row">
+          <input type="checkbox" id="surveyWantPrev">
+          <label for="surveyWantPrev" id="label_prev">まえの せきが いい</label>
+        </div>
+      </div>
+      </div>
+
+      <div id="section_msg">
+      <h2 id="h_msg">せんせいに つたえたいこと</h2>
+      <div class="card">
+        <div class="help" id="d_msg">こまっていることや、せきについての きもちなどを じゆうに かいてください。</div>
+        <div class="message-row">
+          <textarea id="surveyMessage" placeholder="（じゆうに かいてください）"></textarea>
+          <button class="mic-btn" id="micBtn" onclick="startVoiceInput()" title="おんせい にゅうりょく">🎤</button>
+        </div>
+      </div>
+      </div>
+
+      <div class="result-actions">
+        <button class="btn-primary" style="width:100%;" onclick="submitSurvey()">📤 かいとうを おくる</button>
+      </div>
+      <div class="help" style="text-align:center;" id="surveySubmitHelp">「おくる」を おすと、かいとうが せんせいに とどきます。</div>
+
+    </div><!-- /surveyPage2 -->
 
     </div><!-- /publicSurveyForm -->
 
@@ -4442,16 +4459,47 @@ let surveyFriendsGood = new Set();   // 仲のよい子
 let surveyFriendsWant = new Set();   // 仲良くなりたい子
 let surveyFriendsAvoid = new Set();  // ちかくではないほうがいい子
 
-function onSurveyStudentChange(){
+function surveyGoPage2(){
+  const select = document.getElementById('surveyStudentSelect');
+  const sid = select ? select.value : '';
+  if(!sid){
+    showToast('なまえを えらんでください', 'error');
+    return;
+  }
+  // 回答リセット
   surveyRowChoices = [];
   surveyRanked = [];
-  surveyFriendsGood = new Set();
-  surveyFriendsWant = new Set();
+  surveyFriendsGood  = new Set();
+  surveyFriendsWant  = new Set();
   surveyFriendsAvoid = new Set();
   document.getElementById('surveyWantPrev').checked = false;
   document.getElementById('surveyMessage').value = '';
+
+  // 選んだ名前を表示
+  const s = state.students.find(x=>x.id===sid);
+  const displayName = s ? surveyDisplayName(s) : sid;
+  const nameEl = document.getElementById('surveyPage2Name');
+  if(nameEl) nameEl.textContent = displayName + ' さん';
+
+  // ページ切り替え
+  document.getElementById('surveyPage1').hidden = true;
+  document.getElementById('surveyPage2').hidden = false;
+  window.scrollTo(0,0);
+
+  // ページ2を描画（このタイミングでselectのvalueが確定している）
+  renderStudentSurvey();
   renderSurveySeatGrid();
   renderFriendChecklist();
+}
+
+function surveyGoPage1(){
+  document.getElementById('surveyPage1').hidden = false;
+  document.getElementById('surveyPage2').hidden = true;
+  window.scrollTo(0,0);
+}
+
+function onSurveyStudentChange(){
+  // ページ1では何もしない（page2へ進んだときに描画する）
 }
 
 function renderStudentSurvey(){
@@ -4554,7 +4602,7 @@ function renderStudentSurvey(){
   }
 
   // 送信ボタンと名前選択の文言も切り替える
-  const submitBtn = document.querySelector('#publicSurveyForm .btn-primary');
+  const submitBtn = document.querySelector('#surveyPage2 .btn-primary');
   if(submitBtn && getSurveyTextMode()==='kanji') submitBtn.textContent = '📤 回答を送信する';
   else if(submitBtn) submitBtn.textContent = '📤 かいとうを おくる';
 
@@ -4566,8 +4614,16 @@ function renderStudentSurvey(){
   const doneHelp = document.querySelector('#publicSurveyDone .help');
   if(doneHelp) doneHelp.textContent = getDefaultText('done');
 
-  renderSurveySeatGrid();
-  renderFriendChecklist();
+  // ページ2が表示中なら再描画、そうでなければページ1を表示
+  const p2 = document.getElementById('surveyPage2');
+  if(p2 && !p2.hidden){
+    renderSurveySeatGrid();
+    renderFriendChecklist();
+  } else {
+    const p1 = document.getElementById('surveyPage1');
+    if(p1) p1.hidden = false;
+    if(p2) p2.hidden = true;
+  }
 }
 
 function getSeatMode(){
@@ -4810,7 +4866,7 @@ async function submitSurvey(){
     return;
   }
 
-  const submitBtn = document.querySelector('#publicSurveyForm .btn-primary');
+  const submitBtn = document.querySelector('#surveyPage2 .btn-primary');
   if(submitBtn){ submitBtn.disabled = true; submitBtn.textContent = 'おくっています…'; }
 
   const res = await callApi('submitSurveyResponse', {classId: publicSurveyClassId, response: result});
