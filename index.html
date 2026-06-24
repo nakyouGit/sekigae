@@ -2159,7 +2159,9 @@ async function initPublicSurveyFromData(encoded){
 
   let payload;
   try {
-    payload = JSON.parse(decodeURIComponent(escape(atob(encoded))));
+    const binStr = atob(encoded);
+    const bytes = Uint8Array.from(binStr, c=>c.charCodeAt(0));
+    payload = JSON.parse(new TextDecoder().decode(bytes));
   } catch(e) {
     document.getElementById('publicSurveyForm').innerHTML =
       '<div class="card"><h2 style="border:none;padding-left:0;">エラー</h2>' +
@@ -4739,6 +4741,7 @@ function surveyGoPage1(){
 
 function renderStudentSurvey(){
   const select = document.getElementById('surveyStudentSelect');
+  if(!select) return;
   const current = select.value;
   const sorted = [...state.students].sort((a,b)=>(a.number||0)-(b.number||0));
   if(sorted.length===0){
@@ -5135,26 +5138,30 @@ function generateSurveyLink(){
     showToast('先に名簿を登録してください','error'); return;
   }
 
-  // 名簿・座席設定をURLに埋め込む
+  // URLに埋め込むデータ（students含む）
   const payload = {
-    classId:  currentTeacher.uid,
-    gasUrl:   GAS_API_URL,
-    students: state.students.map(s=>({
+    v: 1,
+    classId:       currentTeacher.uid,
+    gasUrl:        GAS_API_URL,
+    students:      state.students.map(s=>({
       id:     s.id,
       number: s.number||'',
       name:   s.name,
       yomi:   s.yomi||s.name,
       gender: s.gender||'none',
     })),
-    grid:         state.grid,
-    seatTemplate: state.seatTemplate,
+    grid:          state.grid,
+    seatTemplate:  state.seatTemplate,
     surveySettings: state.surveySettings,
-    fixedSeats:   state.constraints.fixedSeats||{},
-    surveyClosed: !!(state.surveySettings && state.surveySettings.surveyClosed),
+    fixedSeats:    state.constraints.fixedSeats||{},
+    surveyClosed:  !!(state.surveySettings && state.surveySettings.surveyClosed),
   };
 
-  // Base64エンコードしてURLに埋め込む
-  const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  // Base64エンコード（TextEncoderで日本語対応）
+  const jsonStr = JSON.stringify(payload);
+  const bytes = new TextEncoder().encode(jsonStr);
+  const binStr = Array.from(bytes).map(b=>String.fromCharCode(b)).join('');
+  const encoded = btoa(binStr);
   const url = location.origin + location.pathname + '?d=' + encoded;
 
   document.getElementById('surveyLinkInput').value = url;
