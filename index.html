@@ -930,9 +930,10 @@
 
         <h2>児童アンケート用リンク</h2>
         <div class="card">
-          <div class="help" style="margin-top:0;">このリンクを児童に配ると、座席の希望アンケートに答えてもらえます。回答はこのクラスのデータに自動で届きます。</div>
+          <div class="help" style="margin-top:0;">「リンクを生成」を押すと、その時点の名簿・座席設定を埋め込んだリンクが作られます。このリンクを児童に配ると、GASに接続しなくても正しいアンケートが表示されます。</div>
+          <button class="btn-primary" style="width:100%;margin-bottom:10px;" onclick="generateSurveyLink()">🔗 アンケートリンクを生成</button>
           <div class="copy-row">
-            <input type="text" id="surveyLinkInput" readonly>
+            <input type="text" id="surveyLinkInput" readonly placeholder="上のボタンを押すとリンクが生成されます">
             <button class="btn-secondary" onclick="copySurveyLink()">コピー</button>
           </div>
           <div class="help" id="copyLinkMsg" style="display:none;color:var(--ok);">リンクをコピーしました</div>
@@ -2148,6 +2149,55 @@ async function startApp(){
 }
 
 /* ====================== 児童アンケート（公開リンク） ====================== */
+/* ====================== 児童アンケート（新方式：URLデータ埋め込み） ====================== */
+async function initPublicSurveyFromData(encoded){
+  publicSurveyClassId = null;
+  document.getElementById('authScreens').hidden = true;
+  document.getElementById('mainApp').hidden = true;
+  document.getElementById('studentArea').hidden = false;
+  document.getElementById('boardSub').textContent = 'せきについての きぼうを かいて おくりましょう';
+
+  let payload;
+  try {
+    payload = JSON.parse(decodeURIComponent(escape(atob(encoded))));
+  } catch(e) {
+    document.getElementById('publicSurveyForm').innerHTML =
+      '<div class="card"><h2 style="border:none;padding-left:0;">エラー</h2>' +
+      '<div class="help">リンクが正しくありません。先生に確認してください。</div></div>';
+    return;
+  }
+
+  // GAS URLを設定（回答送信用）
+  if(payload.gasUrl) GAS_API_URL = payload.gasUrl;
+  publicSurveyClassId = payload.classId || '';
+
+  // URLに埋め込まれたデータをstateに直接セット（GAS不要）
+  state = defaultState();
+  state.students      = payload.students     || [];
+  state.grid          = payload.grid         || {rows:5, cols:6};
+  state.seatTemplate  = payload.seatTemplate || [];
+  state.surveySettings = Object.assign(defaultSurveySettings(), payload.surveySettings||{});
+  if(!state.surveySettings.questions) state.surveySettings.questions = defaultSurveySettings().questions;
+  if(!state.constraints) state.constraints = defaultState().constraints;
+  state.constraints.fixedSeats = payload.fixedSeats || {};
+  ensureSeatTemplate();
+
+  // 締め切りチェック
+  if(payload.surveyClosed){
+    document.getElementById('publicSurveyForm').innerHTML =
+      '<div class="card" style="text-align:center;padding:24px 16px;">' +
+      '<div style="font-size:40px;margin-bottom:12px;">🔒</div>' +
+      '<h2 style="border:none;padding-left:0;">アンケートは締め切られました</h2>' +
+      '<div class="help" style="margin:0;">先生がアンケートを締め切りました。<br>回答できません。先生に確認してください。</div>' +
+      '</div>';
+    return;
+  }
+
+  switchMode('student');
+  renderStudentSurvey();
+}
+
+/* ====================== 児童アンケート（旧方式：GASから取得） ====================== */
 async function initPublicSurvey(classId){
   publicSurveyClassId = classId;
   document.getElementById('authScreens').hidden = true;
@@ -2212,7 +2262,8 @@ async function initPublicSurvey(classId){
 /* ====================== 初期化 ====================== */
 function init(){
   const params = new URLSearchParams(location.search);
-  const classId = params.get('class');
+  const classId   = params.get('class');
+  const encoded   = params.get('d');      // 新方式：データ埋め込みURL
   const resetToken = params.get('reset');
 
   if(resetToken){
@@ -2220,6 +2271,13 @@ function init(){
     showAuthScreen('resetpw');
   }
 
+  // 新方式：?d= にデータが埋め込まれている
+  if(encoded){
+    initPublicSurveyFromData(encoded);
+    return;
+  }
+
+  // 旧方式：?class= でGASから取得
   if(classId){
     initPublicSurvey(classId);
     return;
@@ -4679,10 +4737,6 @@ function surveyGoPage1(){
   window.scrollTo(0,0);
 }
 
-function onSurveyStudentChange(){
-  // ページ1では何もしない（page2へ進んだときに描画する）
-}
-
 function renderStudentSurvey(){
   const select = document.getElementById('surveyStudentSelect');
   const current = select.value;
@@ -5071,9 +5125,40 @@ function renderAccountInfo(){
 
 function renderSurveyLink(){
   if(!currentTeacher) return;
-  const url = location.origin + location.pathname + '?class=' + (currentTeacher.uid || currentTeacher.teacherId || '');
-  document.getElementById('surveyLinkInput').value = url;
+  // 既存リンクがあればそのまま表示（生成ボタンを押すまでは変えない）
   renderSurveyStatus();
+}
+
+function generateSurveyLink(){
+  if(!currentTeacher){ showToast('ログインが必要です','error'); return; }
+  if(!state.students || state.students.length===0){
+    showToast('先に名簿を登録してください','error'); return;
+  }
+
+  // 名簿・座席設定をURLに埋め込む
+  const payload = {
+    classId:  currentTeacher.uid,
+    gasUrl:   GAS_API_URL,
+    students: state.students.map(s=>({
+      id:     s.id,
+      number: s.number||'',
+      name:   s.name,
+      yomi:   s.yomi||s.name,
+      gender: s.gender||'none',
+    })),
+    grid:         state.grid,
+    seatTemplate: state.seatTemplate,
+    surveySettings: state.surveySettings,
+    fixedSeats:   state.constraints.fixedSeats||{},
+    surveyClosed: !!(state.surveySettings && state.surveySettings.surveyClosed),
+  };
+
+  // Base64エンコードしてURLに埋め込む
+  const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  const url = location.origin + location.pathname + '?d=' + encoded;
+
+  document.getElementById('surveyLinkInput').value = url;
+  showToast('リンクを生成しました。コピーして児童に配ってください。', 'ok', 3000);
 }
 
 function renderSurveyStatus(){
