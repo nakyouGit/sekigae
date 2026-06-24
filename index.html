@@ -1406,6 +1406,12 @@
             </div>
             <div id="aiChatSwapArea" hidden style="margin-top:10px;"></div>
           </div>
+
+          <h2>席替え履歴</h2>
+          <div class="card">
+            <div class="help" style="margin-top:0;">「📌 席替え確定」を押すと自動で保存されます。過去5回分の座席表を確認・復元できます。</div>
+            <div id="seatHistoryList"></div>
+          </div>
         </div>
       </div>
 
@@ -1663,7 +1669,8 @@ function defaultState(){
     seatTemplate: [],         // array seatIndex -> 'any' | 'male' | 'female' | 'disabled'
     surveySettings: defaultSurveySettings(),
     surveyResults: [],
-    slots: [null, null, null, null, null]  // 5つの保存スロット         // {studentId, studentName, seatPref, friends, wantPrevSeat, message, submittedAt}
+    slots: [null, null, null, null, null],  // 5つの保存スロット
+    seatHistory: [],  // 席替え履歴（最大5件）
   };
 }
 let state = defaultState();
@@ -2158,6 +2165,14 @@ async function initPublicSurvey(classId){
   if(!state.constraints) state.constraints = defaultState().constraints;
   state.constraints.fixedSeats = res.fixedSeats || {};
   ensureSeatTemplate();
+
+  // デバッグ表示（本番確認用）
+  console.log('[DEBUG getSurveyConfig]', JSON.stringify({
+    students_count: state.students.length,
+    student_0: state.students[0]||null,
+    seatTemplate_0_5: state.seatTemplate.slice(0,6),
+    fixedSeats: state.constraints.fixedSeats,
+  }));
 
   // 締め切りチェック
   if(state.surveySettings.surveyClosed){
@@ -4186,9 +4201,105 @@ function savePrevious(){
   const cb = document.getElementById('avoidPrevious');
   if(cb) cb.checked = true;
   prevSeatDetailOpen = false;
+
+  // 席替え履歴に追加
+  addSeatHistory();
+
   saveState();
   renderPrevSeatStatus();
-  showToast('席替えを確定しました。「前回と同じ席を避ける」が自動でONになりました。', 'ok', 3500);
+  renderSeatHistory();
+  showToast('席替えを確定しました。履歴に保存しました。', 'ok', 3500);
+}
+
+/* ---------- 席替え履歴 ---------- */
+const SEAT_HISTORY_MAX = 5;
+
+function addSeatHistory(){
+  if(!state.currentSeating) return;
+  if(!state.seatHistory) state.seatHistory = [];
+  const entry = {
+    savedAt: new Date().toISOString(),
+    classInfo: JSON.parse(JSON.stringify(state.classInfo||{})),
+    students: JSON.parse(JSON.stringify(state.students||[])),
+    grid: JSON.parse(JSON.stringify(state.grid||{})),
+    seatTemplate: JSON.parse(JSON.stringify(state.seatTemplate||[])),
+    seating: JSON.parse(JSON.stringify(state.currentSeating)),
+  };
+  state.seatHistory.unshift(entry); // 新しいものを先頭に
+  if(state.seatHistory.length > SEAT_HISTORY_MAX)
+    state.seatHistory = state.seatHistory.slice(0, SEAT_HISTORY_MAX);
+}
+
+function renderSeatHistory(){
+  const el = document.getElementById('seatHistoryList');
+  if(!el) return;
+  const history = state.seatHistory || [];
+  if(history.length === 0){
+    el.innerHTML = '<div class="help" style="margin:0;">まだ履歴がありません。「📌 席替え確定」を押すと保存されます。</div>';
+    return;
+  }
+  el.innerHTML = history.map((entry, i)=>{
+    const date = new Date(entry.savedAt);
+    const label = `${date.getFullYear()}/${date.getMonth()+1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2,'0')}`;
+    const cls = entry.classInfo||{};
+    const clsLabel = cls.grade&&cls.group ? `${cls.grade}年${cls.group}組` : '';
+    return `<div class="list-row" style="align-items:center;flex-wrap:wrap;gap:6px;">
+      <div style="flex:1;min-width:120px;">
+        <div style="font-weight:700;font-size:13px;">${i===0?'🕐 最新　':''}${label}</div>
+        <div style="font-size:12px;color:var(--text-sub);">${clsLabel} ${(entry.students||[]).length}名</div>
+      </div>
+      <button class="btn-secondary" style="font-size:12px;" onclick="previewSeatHistory(${i})">👁 確認</button>
+      <button class="btn-secondary" style="font-size:12px;" onclick="restoreSeatHistory(${i})">↩ 復元</button>
+      <button class="btn-x" onclick="deleteSeatHistory(${i})">×</button>
+    </div>`;
+  }).join('');
+}
+
+async function previewSeatHistory(idx){
+  const entry = (state.seatHistory||[])[idx];
+  if(!entry) return;
+  const cols = (entry.grid||{}).cols || 6;
+  const rows = (entry.grid||{}).rows || 5;
+  const stuMap = {};
+  (entry.students||[]).forEach(s=>stuMap[s.id]=s);
+  const date = new Date(entry.savedAt);
+  const label = `${date.getFullYear()}/${date.getMonth()+1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2,'0')}`;
+
+  let grid = `<div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:2px;margin-top:8px;max-width:320px;">`;
+  (entry.seating||[]).forEach((sid, i)=>{
+    const tpl = (entry.seatTemplate||[])[i]||'any';
+    if(tpl==='disabled'){ grid+=`<div style="background:#ccc;border-radius:4px;padding:2px;font-size:8px;text-align:center;color:#888;">×</div>`; return; }
+    const s = sid ? stuMap[sid] : null;
+    const bg = tpl==='male'?'#a8d4f0':tpl==='female'?'#f4aab4':'#e9d6b3';
+    const name = s ? (s.name||s.yomi||'').replace(/\s/g,'') : '';
+    grid+=`<div style="background:${bg};border-radius:4px;padding:2px;font-size:8px;text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${escapeHtml(name)}</div>`;
+  });
+  grid+='</div>';
+
+  await showDialog(`📋 ${label} の座席表`, grid, [{label:'閉じる', cls:'dialog-ok', value:null}]);
+}
+
+async function restoreSeatHistory(idx){
+  const entry = (state.seatHistory||[])[idx];
+  if(!entry) return;
+  const date = new Date(entry.savedAt);
+  const label = `${date.getFullYear()}/${date.getMonth()+1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2,'0')}`;
+  if(!await dlgConfirm(`「${label}」の座席表を現在の座席表として復元しますか？`, '復元')) return;
+
+  state.currentSeating = JSON.parse(JSON.stringify(entry.seating));
+  renderResult();
+  document.getElementById('candidatesSection').hidden = true;
+  document.getElementById('finalSection').hidden = false;
+  renderSeatHistory();
+  saveState();
+  showToast('座席表を復元しました。', 'ok');
+}
+
+async function deleteSeatHistory(idx){
+  if(!await dlgConfirm('この履歴を削除しますか？', '削除', true)) return;
+  if(state.seatHistory) state.seatHistory.splice(idx, 1);
+  renderSeatHistory();
+  saveState();
 }
 
 /* ====================== 手動編集モード（finalSection） ====================== */
@@ -4458,6 +4569,8 @@ let surveyRanked = [];        // array of seat indices, in order (top3 mode)
 let surveyFriendsGood = new Set();   // 仲のよい子
 let surveyFriendsWant = new Set();   // 仲良くなりたい子
 let surveyFriendsAvoid = new Set();  // ちかくではないほうがいい子
+let surveyCurrentStudentId = null;      // 現在回答中の児童ID
+let surveyCurrentStudentGender = 'none'; // 現在回答中の児童の性別（data-genderから取得）
 
 function surveyGoPage2(){
   const select = document.getElementById('surveyStudentSelect');
@@ -4466,6 +4579,18 @@ function surveyGoPage2(){
     showToast('なまえを えらんでください', 'error');
     return;
   }
+
+  // genderをoptionのdata-gender属性から取得（state.studentsのgenderが空でも動く）
+  const selectedOption = select.options[select.selectedIndex];
+  const genderFromOption = selectedOption ? (selectedOption.dataset.gender || 'none') : 'none';
+
+  // state.studentsからも取得（どちらかあれば使う）
+  const s = state.students.find(x=>x.id===sid);
+  const genderFromState = s ? (s.gender || 'none') : 'none';
+
+  // genderを確定（data-gender優先、なければstate）
+  surveyCurrentStudentGender = (genderFromOption !== 'none') ? genderFromOption : genderFromState;
+
   // 回答リセット
   surveyRowChoices = [];
   surveyRanked = [];
@@ -4476,23 +4601,24 @@ function surveyGoPage2(){
   document.getElementById('surveyMessage').value = '';
 
   // 選んだ名前を表示
-  const s = state.students.find(x=>x.id===sid);
   const displayName = s ? surveyDisplayName(s) : sid;
   const nameEl = document.getElementById('surveyPage2Name');
   if(nameEl) nameEl.textContent = displayName + ' さん';
 
   // ページ切り替え
+  surveyCurrentStudentId = sid;
   document.getElementById('surveyPage1').hidden = true;
   document.getElementById('surveyPage2').hidden = false;
   window.scrollTo(0,0);
 
-  // ページ2を描画（このタイミングでselectのvalueが確定している）
-  renderStudentSurvey();
+  // ページ2を描画
   renderSurveySeatGrid();
   renderFriendChecklist();
 }
 
 function surveyGoPage1(){
+  surveyCurrentStudentId = null;
+  surveyCurrentStudentGender = 'none';
   document.getElementById('surveyPage1').hidden = false;
   document.getElementById('surveyPage2').hidden = true;
   window.scrollTo(0,0);
@@ -4511,7 +4637,7 @@ function renderStudentSurvey(){
   }else{
     select.innerHTML = sorted.map(s=>{
       const num = s.number ? (s.number + '. ') : '';
-      return `<option value="${s.id}">${escapeHtml(num + surveyDisplayName(s))}</option>`;
+      return `<option value="${s.id}" data-gender="${s.gender||'none'}">${escapeHtml(num + surveyDisplayName(s))}</option>`;
     }).join('');
     if(current && studentById(current)) select.value = current;
   }
@@ -4614,16 +4740,11 @@ function renderStudentSurvey(){
   const doneHelp = document.querySelector('#publicSurveyDone .help');
   if(doneHelp) doneHelp.textContent = getDefaultText('done');
 
-  // ページ2が表示中なら再描画、そうでなければページ1を表示
+  // 常にページ1を表示（グリッド描画はsurveyGoPage2で行う）
+  const p1 = document.getElementById('surveyPage1');
   const p2 = document.getElementById('surveyPage2');
-  if(p2 && !p2.hidden){
-    renderSurveySeatGrid();
-    renderFriendChecklist();
-  } else {
-    const p1 = document.getElementById('surveyPage1');
-    if(p1) p1.hidden = false;
-    if(p2) p2.hidden = true;
-  }
+  if(p1) p1.hidden = false;
+  if(p2) p2.hidden = true;
 }
 
 function getSeatMode(){
@@ -4646,14 +4767,12 @@ function renderSurveySeatGrid(){
   const labelMale   = isKanji ? '男子席' : 'だんしせき';
   const labelFemale = isKanji ? '女子席' : 'じょしせき';
 
-  // 回答中の児童
-  const selfEl = document.getElementById('surveyStudentSelect');
-  const selfId = selfEl ? selfEl.value : '';
-  const selfStudent = selfId ? state.students.find(s=>s.id===selfId) : null;
-  const selfGender  = selfStudent ? selfStudent.gender : null;
+  // 回答中の児童の性別（surveyGoPage2でdata-gender属性から確実に取得済み）
+  const selfId      = surveyCurrentStudentId;
+  const selfGender  = surveyCurrentStudentGender || 'none';
 
-  // 児童未選択の場合はグリッドを非表示にしてメッセージ表示
-  if(!selfId || !selfStudent){
+  // 児童未選択の場合はメッセージ表示
+  if(!selfId){
     const msg = isKanji ? 'まず上の「あなたのなまえ」から名前を選んでください。' : 'まず うえの「あなたの なまえ」から なまえを えらんでください。';
     grid.innerHTML = `<div style="grid-column:1/-1;padding:16px;text-align:center;font-size:13px;color:var(--text-sub);">${msg}</div>`;
     return;
@@ -4666,8 +4785,8 @@ function renderSurveySeatGrid(){
   for(let i=0;i<total;i++){
     const tpl = state.seatTemplate[i] || 'any';
 
-    // 性別チェック
-    const genderMismatch = selfGender && selfGender!=='none' && (
+    // 性別チェック（surveyCurrentStudentGenderを使用・state.studentsに依存しない）
+    const genderMismatch = selfGender !== 'none' && (
       (tpl==='male'   && selfGender==='female') ||
       (tpl==='female' && selfGender==='male')
     );
@@ -4701,14 +4820,13 @@ function renderSurveySeatGrid(){
 }
 
 function onSeatTap(idx){
-  // 性別チェック（二重防衛）
   const tpl = state.seatTemplate[idx] || 'any';
   const fixedSeats = new Set(Object.values(state.constraints.fixedSeats||{}).map(Number));
-  const selfId = document.getElementById('surveyStudentSelect') && document.getElementById('surveyStudentSelect').value;
-  const selfStudent = selfId ? state.students.find(s=>s.id===selfId) : null;
-  const selfGender = selfStudent ? selfStudent.gender : null;
-  const genderMismatch = selfGender && selfGender!=='none' && (
-    (tpl==='male' && selfGender==='female') || (tpl==='female' && selfGender==='male')
+  // genderはsurveyCurrentStudentGenderから取得（state.studentsに依存しない）
+  const selfGender = surveyCurrentStudentGender || 'none';
+  const genderMismatch = selfGender !== 'none' && (
+    (tpl==='male'   && selfGender==='female') ||
+    (tpl==='female' && selfGender==='male')
   );
   if(tpl==='disabled' || fixedSeats.has(idx) || genderMismatch) return;
 
@@ -5284,9 +5402,10 @@ function renderAll(){
   document.getElementById('manualSection').hidden = true;
     document.getElementById('finalSection').hidden = true;
   }
+  renderSeatHistory();
 }
 
-init();
+document.addEventListener('DOMContentLoaded', init);
 </script>
 <!-- トースト通知 -->
 <div id="toastContainer"></div>
