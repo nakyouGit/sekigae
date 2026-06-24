@@ -2263,7 +2263,10 @@ async function initPublicSurvey(classId){
 function init(){
   const params = new URLSearchParams(location.search);
   const classId   = params.get('class');
-  const encoded   = params.get('d');      // 新方式：データ埋め込みURL
+  // ?d= パラメータは生文字列から取得（URLSearchParams.getは自動デコードするため使わない）
+  const rawSearch = location.search;
+  const dMatch = rawSearch.match(/[?&]d=([^&]*)/);
+  const encoded = dMatch ? dMatch[1] : null;
   const resetToken = params.get('reset');
 
   if(resetToken){
