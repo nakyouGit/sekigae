@@ -1513,10 +1513,19 @@
     <div id="surveyPage1">
       <div class="card student-select-card">
         <h2 style="text-align:center;">あなたの なまえ</h2>
-        <select id="surveyStudentSelect"></select>
+        <select id="surveyStudentSelect" onchange="onSurveyStudentChange()"></select>
+
+        <!-- data-genderがnoneの場合に表示される性別確認UI -->
+        <div id="surveyGenderConfirm" style="display:none;margin-top:14px;">
+          <div class="help" style="margin-top:0;margin-bottom:8px;">あなたは 男子（だんし）ですか、女子（じょし）ですか？</div>
+          <div style="display:flex;gap:10px;">
+            <button class="btn-secondary" style="flex:1;padding:12px;font-size:16px;" onclick="setSurveyGender('male')">👦 だんし</button>
+            <button class="btn-secondary" style="flex:1;padding:12px;font-size:16px;" onclick="setSurveyGender('female')">👧 じょし</button>
+          </div>
+        </div>
       </div>
       <div class="result-actions" style="margin-top:12px;">
-        <button class="btn-primary" style="width:100%;font-size:18px;padding:14px;" onclick="surveyGoPage2()">つぎへ →</button>
+        <button id="surveyPage1NextBtn" class="btn-primary" style="width:100%;font-size:18px;padding:14px;" onclick="surveyGoPage2()">つぎへ →</button>
       </div>
     </div>
 
@@ -4571,6 +4580,43 @@ let surveyFriendsWant = new Set();   // 仲良くなりたい子
 let surveyFriendsAvoid = new Set();  // ちかくではないほうがいい子
 let surveyCurrentStudentId = null;      // 現在回答中の児童ID
 let surveyCurrentStudentGender = 'none'; // 現在回答中の児童の性別（data-genderから取得）
+let surveyManualGender = 'none';         // 性別確認UIで手動選択した性別
+
+function onSurveyStudentChange(){
+  // 名前が変わったら性別確認UIを更新
+  const select = document.getElementById('surveyStudentSelect');
+  const sid = select ? select.value : '';
+  const selectedOption = select ? select.options[select.selectedIndex] : null;
+  const genderFromOption = selectedOption ? (selectedOption.dataset.gender || 'none') : 'none';
+
+  surveyManualGender = 'none'; // リセット
+
+  const confirmDiv = document.getElementById('surveyGenderConfirm');
+  const nextBtn = document.getElementById('surveyPage1NextBtn');
+  if(confirmDiv){
+    if(!sid || genderFromOption !== 'none'){
+      // genderが分かる場合は確認UIを非表示
+      confirmDiv.style.display = 'none';
+      if(nextBtn) nextBtn.style.display = '';
+    } else {
+      // genderが不明な場合は確認UIを表示し、つぎへボタンを隠す
+      confirmDiv.style.display = 'block';
+      if(nextBtn) nextBtn.style.display = 'none';
+    }
+  }
+}
+
+function setSurveyGender(gender){
+  surveyManualGender = gender;
+  // ボタンのスタイルを更新
+  const btns = document.querySelectorAll('#surveyGenderConfirm button');
+  btns.forEach(b => b.style.background = '');
+  const selected = document.querySelector(`#surveyGenderConfirm button[onclick*="${gender}"]`);
+  if(selected) selected.style.background = gender==='male' ? '#a8d4f0' : '#f4aab4';
+  // つぎへボタンを表示
+  const nextBtn = document.getElementById('surveyPage1NextBtn');
+  if(nextBtn) nextBtn.style.display = '';
+}
 
 function surveyGoPage2(){
   const select = document.getElementById('surveyStudentSelect');
@@ -4588,8 +4634,11 @@ function surveyGoPage2(){
   const s = state.students.find(x=>x.id===sid);
   const genderFromState = s ? (s.gender || 'none') : 'none';
 
-  // genderを確定（data-gender優先、なければstate）
-  surveyCurrentStudentGender = (genderFromOption !== 'none') ? genderFromOption : genderFromState;
+  // genderを確定（優先順位：手動選択 > data-gender > state）
+  surveyCurrentStudentGender =
+    surveyManualGender !== 'none' ? surveyManualGender :
+    genderFromOption  !== 'none' ? genderFromOption  :
+    genderFromState   !== 'none' ? genderFromState   : 'none';
 
   // 回答リセット
   surveyRowChoices = [];
@@ -4619,8 +4668,14 @@ function surveyGoPage2(){
 function surveyGoPage1(){
   surveyCurrentStudentId = null;
   surveyCurrentStudentGender = 'none';
+  surveyManualGender = 'none';
   document.getElementById('surveyPage1').hidden = false;
   document.getElementById('surveyPage2').hidden = true;
+  // 性別確認UIをリセット
+  const confirmDiv = document.getElementById('surveyGenderConfirm');
+  if(confirmDiv) confirmDiv.style.display = 'none';
+  const nextBtn = document.getElementById('surveyPage1NextBtn');
+  if(nextBtn) nextBtn.style.display = '';
   window.scrollTo(0,0);
 }
 
