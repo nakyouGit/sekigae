@@ -2159,9 +2159,7 @@ async function initPublicSurveyFromData(encoded){
 
   let payload;
   try {
-    const binStr = atob(encoded);
-    const bytes = Uint8Array.from(binStr, c=>c.charCodeAt(0));
-    payload = JSON.parse(new TextDecoder().decode(bytes));
+    payload = JSON.parse(decodeURIComponent(encoded));
   } catch(e) {
     document.getElementById('publicSurveyForm').innerHTML =
       '<div class="card"><h2 style="border:none;padding-left:0;">エラー</h2>' +
@@ -5157,11 +5155,8 @@ function generateSurveyLink(){
     surveyClosed:  !!(state.surveySettings && state.surveySettings.surveyClosed),
   };
 
-  // Base64エンコード（TextEncoderで日本語対応）
-  const jsonStr = JSON.stringify(payload);
-  const bytes = new TextEncoder().encode(jsonStr);
-  const binStr = Array.from(bytes).map(b=>String.fromCharCode(b)).join('');
-  const encoded = btoa(binStr);
+  // URLエンコード（日本語対応・シンプルで確実）
+  const encoded = encodeURIComponent(JSON.stringify(payload));
   const url = location.origin + location.pathname + '?d=' + encoded;
 
   document.getElementById('surveyLinkInput').value = url;
