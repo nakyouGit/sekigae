@@ -2619,11 +2619,6 @@ function renderRoster(){
     <div class="roster-item ${s.gender}">
       ${s.number ? `<span style="font-size:12px;color:#9a8f7d;min-width:24px;">${escapeHtml(String(s.number))}.</span>` : ''}
       <span class="name">${escapeHtml(s.name||'')}${s.yomi&&s.yomi!==s.name?'<br><span style="font-size:11px;font-weight:400;color:#7a7264;">'+escapeHtml(s.yomi)+'</span>':''}</span>
-      <select onchange="updateStudentGender('${s.id}', this.value)">
-        <option value="none" ${s.gender==='none'?'selected':''}>指定なし</option>
-        <option value="male" ${s.gender==='male'?'selected':''}>男子</option>
-        <option value="female" ${s.gender==='female'?'selected':''}>女子</option>
-      </select>
       <button class="btn-x" onclick="removeStudent('${s.id}')">×</button>
     </div>
   `).join('');
