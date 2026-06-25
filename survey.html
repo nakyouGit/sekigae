@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>席かえーる アンケート</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --bg:#fdf6ee;--card-bg:#fff;--text:#3d3529;--text-sub:#7a7264;
+  --accent:#4a7c59;--accent-light:#e8f4ed;
+  --male-bg:#dcedf9;--female-bg:#fce8ec;--any-bg:#f4ecd9;
+  --disabled-bg:#e2ddd8;--ok:#4a7c59;--err:#c0392b;
+  --border:#e0d8ce;--radius:12px;--shadow:0 2px 8px rgba(0,0,0,.08);
+}
+body{background:var(--bg);color:var(--text);font-family:"Hiragino Sans","Yu Gothic",sans-serif;min-height:100vh;}
+.header{background:#2d5a3d;color:#fff;padding:18px 16px 14px;text-align:center;border-bottom:3px dashed rgba(255,255,255,.3);}
+.header h1{font-size:22px;font-weight:800;letter-spacing:.04em;}
+.header .sub{font-size:13px;opacity:.85;margin-top:4px;}
+.wrap{max-width:520px;margin:0 auto;padding:16px 14px 40px;}
+.card{background:var(--card-bg);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow);margin-bottom:12px;}
+h2{font-size:15px;font-weight:700;padding:0 0 10px;border-left:4px solid var(--accent);padding-left:10px;margin:20px 0 10px;}
+.help{font-size:12px;color:var(--text-sub);line-height:1.6;margin:4px 0 10px;}
+select,textarea,input[type=text]{width:100%;padding:12px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;font-family:inherit;background:#fff;color:var(--text);}
+select:focus,textarea:focus{outline:none;border-color:var(--accent);}
+textarea{min-height:70px;resize:vertical;}
+.btn-primary{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:13px 18px;font-size:15px;font-weight:700;cursor:pointer;width:100%;font-family:inherit;}
+.btn-primary:disabled{opacity:.5;cursor:not-allowed;}
+.btn-secondary{background:#f0ece6;color:var(--text);border:none;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;}
+.btn-secondary:hover{background:#e8e2da;}
+.name-bar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:10px 14px;background:var(--card-bg);border-radius:10px;box-shadow:var(--shadow);margin-bottom:12px;}
+.name-bar .name{font-size:16px;font-weight:700;}
+.blackboard-label{background:#1e3d2a;color:#fff;text-align:center;padding:8px;border-radius:8px;font-size:13px;font-weight:700;margin-bottom:10px;}
+.seat-grid{display:grid;gap:6px;}
+.seat{border:1.5px solid #bbb;border-radius:10px;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11px;font-weight:700;cursor:pointer;position:relative;transition:all .15s;text-align:center;padding:4px;}
+.seat.interactive{border-color:#4a7c59;cursor:pointer;}
+.seat.interactive:hover{opacity:.85;}
+.seat.selected{background:#4a7c59!important;color:#fff!important;border-color:#2d5a3d;}
+.seat.disabled{background:var(--disabled-bg)!important;color:#999;cursor:not-allowed;border-style:dashed;}
+.seat.male{background:var(--male-bg);}
+.seat.female{background:var(--female-bg);}
+.seat.any{background:var(--any-bg);}
+.seat .row-label{font-size:9px;color:var(--text-sub);margin-bottom:2px;}
+.seat .mark{font-size:18px;line-height:1;color:#4a7c59;}
+.seat.selected .mark{color:#fff;}
+.seat .seat-name{font-size:9px;color:var(--text-sub);}
+.friend-list{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;}
+.friend-check{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:#f8f4ef;cursor:pointer;}
+.friend-check.selected{background:var(--accent-light);}
+.friend-check input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent);}
+.friend-check .fc-name{font-size:14px;font-weight:600;}
+.friend-check .fc-yomi{font-size:11px;color:var(--text-sub);}
+.check-row{display:flex;align-items:center;gap:10px;padding:4px 0;}
+.check-row input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent);}
+.check-row label{font-size:14px;cursor:pointer;}
+.mic-row{display:flex;gap:8px;align-items:flex-start;}
+.mic-row textarea{flex:1;}
+.mic-btn{background:#f0ece6;border:none;border-radius:8px;padding:11px 12px;font-size:18px;cursor:pointer;}
+.gender-btns{display:flex;gap:10px;margin-top:10px;}
+.gender-btns button{flex:1;padding:13px;font-size:16px;}
+#surveyDone{text-align:center;padding:32px 16px;}
+#surveyDone .done-icon{font-size:56px;margin-bottom:12px;}
+#surveyDone h2{font-size:20px;border:none;padding:0;margin:0 0 8px;}
+#surveyDone .msg{font-size:14px;color:var(--text-sub);}
+#errorCard{text-align:center;padding:32px 16px;}
+#errorCard .err-icon{font-size:48px;margin-bottom:12px;}
+#loadingCard{text-align:center;padding:40px 16px;}
+.spinner{width:36px;height:36px;border:4px solid #e0d8ce;border-top:4px solid var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 14px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.toast-container{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none;}
+.toast{background:#333;color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;}
+.toast.ok{background:#2d6a3f;}
+.toast.error{background:#c0392b;}
+.toast.show{opacity:1;}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🐸 席かえーる</h1>
+  <div class="sub" id="headerSub">せきについての きぼうを かいて おくりましょう</div>
+</div>
+
+<div class="wrap">
+
+  <!-- ローディング -->
+  <div id="loadingCard" class="card">
+    <div class="spinner"></div>
+    <div style="font-size:14px;color:var(--text-sub);">よみこんでいます…</div>
+  </div>
+
+  <!-- エラー -->
+  <div id="errorCard" class="card" hidden>
+    <div class="err-icon">⚠️</div>
+    <h2 style="border:none;padding:0;">よみこめませんでした</h2>
+    <div class="msg" id="errorMsg" style="margin-top:8px;">リンクが正しくありません。先生に確認してください。</div>
+  </div>
+
+  <!-- 締め切り -->
+  <div id="closedCard" class="card" hidden>
+    <div style="text-align:center;padding:16px 0;">
+      <div style="font-size:48px;margin-bottom:12px;">🔒</div>
+      <h2 style="border:none;padding:0;">アンケートは締め切られました</h2>
+      <div class="msg" style="margin-top:8px;">せんせいが アンケートを しめきりました。<br>せんせいに かくにん してください。</div>
+    </div>
+  </div>
+
+  <!-- 送信完了 -->
+  <div id="surveyDone" class="card" hidden>
+    <div class="done-icon">📤</div>
+    <h2>ありがとうございました</h2>
+    <div class="msg">かいとうを そうしんしました。</div>
+  </div>
+
+  <!-- アンケートフォーム -->
+  <div id="surveyForm" hidden>
+
+    <!-- ページ1：名前選択 -->
+    <div id="surveyPage1">
+      <div class="card">
+        <h2 style="margin-top:0;">あなたの なまえ</h2>
+        <select id="surveyStudentSelect" onchange="onSurveyStudentChange()">
+          <option value="">── えらんでください ──</option>
+        </select>
+        <!-- genderなし時の性別確認UI -->
+        <div id="surveyGenderConfirm" hidden>
+          <div class="help" style="margin-top:12px;">あなたは だんしですか、じょしですか？</div>
+          <div class="gender-btns">
+            <button class="btn-secondary" id="btnMale" onclick="setSurveyGender('male')">👦 だんし</button>
+            <button class="btn-secondary" id="btnFemale" onclick="setSurveyGender('female')">👧 じょし</button>
+          </div>
+        </div>
+      </div>
+      <button class="btn-primary" id="page1NextBtn" style="font-size:18px;padding:15px;" onclick="surveyGoPage2()">つぎへ →</button>
+    </div>
+
+    <!-- ページ2：アンケート内容 -->
+    <div id="surveyPage2" hidden>
+
+      <!-- 選んだ名前表示 -->
+      <div class="name-bar">
+        <span class="name" id="page2Name"></span>
+        <button class="btn-secondary" onclick="surveyGoPage1()">← なまえを えらびなおす</button>
+      </div>
+
+      <!-- 席の希望 -->
+      <div id="seatSection">
+        <h2 id="seatHeading">せきの きぼう</h2>
+        <div class="card">
+          <div class="help" id="seatHelp"></div>
+          <div class="blackboard-label">⬛ こくばん（きょうしつの まえ）</div>
+          <div class="seat-grid" id="surveySeatGrid"></div>
+        </div>
+      </div>
+
+      <!-- 仲の良い子 -->
+      <div id="friendGoodSection">
+        <h2 id="friendGoodHeading">なかの よい こ</h2>
+        <div class="card">
+          <div class="help" id="friendGoodHelp"></div>
+          <div class="friend-list" id="friendListGood"></div>
+        </div>
+      </div>
+
+      <!-- 仲良くなりたい子 -->
+      <div id="friendWantSection">
+        <h2 id="friendWantHeading">なかよく なりたい こ</h2>
+        <div class="card">
+          <div class="help" id="friendWantHelp"></div>
+          <div class="friend-list" id="friendListWant"></div>
+        </div>
+      </div>
+
+      <!-- 避けたい子 -->
+      <div id="friendAvoidSection">
+        <h2 id="friendAvoidHeading">ちかくではないほうがいい こ</h2>
+        <div class="card">
+          <div class="help" id="friendAvoidHelp"></div>
+          <div class="friend-list" id="friendListAvoid"></div>
+        </div>
+      </div>
+
+      <!-- 前の席 -->
+      <div id="prevSection">
+        <h2>まえの せきについて</h2>
+        <div class="card">
+          <div class="check-row">
+            <input type="checkbox" id="surveyWantPrev">
+            <label for="surveyWantPrev" id="prevLabel">まえの せきが いい</label>
+          </div>
+        </div>
+      </div>
+
+      <!-- メッセージ -->
+      <div id="msgSection">
+        <h2 id="msgHeading">せんせいに つたえたいこと</h2>
+        <div class="card">
+          <div class="help" id="msgHelp">こまっていることや、せきについての きもちなどを じゆうに かいてください。</div>
+          <div class="mic-row">
+            <textarea id="surveyMessage" placeholder="（じゆうに かいてください）"></textarea>
+            <button class="mic-btn" onclick="startVoiceInput()" title="おんせい にゅうりょく">🎤</button>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="submitBtn" onclick="submitSurvey()">📤 かいとうを おくる</button>
+      <div class="help" style="text-align:center;margin-top:8px;">「おくる」を おすと、かいとうが せんせいに とどきます。</div>
+
+    </div><!-- /surveyPage2 -->
+
+  </div><!-- /surveyForm -->
+
+</div><!-- /wrap -->
+
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ==============================
+// 設定
+// ==============================
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbxg_Yk64-pqJX6SZrPGuNp-F-QtAzhvSJBhQrcpwVzZoxLGl8sD4XYc8FuFbkVbH-kr4w/exec';
+
+// ==============================
+// 状態変数
+// ==============================
+let classId = '';
+let surveyConfig = null; // GASから取得した設定
+let studentGender = 'none';   // 現在回答中の児童のgender
+let manualGender  = 'none';   // 手動選択のgender
+let rowChoices  = [];         // rowCircleモード: 行ごとの選択席インデックス
+let ranked      = [];         // top3モード: 選択席インデックスの配列
+let friendsGood  = new Set();
+let friendsWant  = new Set();
+let friendsAvoid = new Set();
+
+// ==============================
+// ユーティリティ
+// ==============================
+function escapeHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function showToast(msg, type='', dur=2800){
+  const c = document.getElementById('toastContainer');
+  const d = document.createElement('div');
+  d.className = 'toast' + (type ? ' '+type : '');
+  d.textContent = msg;
+  c.appendChild(d);
+  setTimeout(()=>d.classList.add('show'),10);
+  setTimeout(()=>{ d.classList.remove('show'); setTimeout(()=>d.remove(),350); }, dur);
+}
+
+function show(id){ const el=document.getElementById(id); if(el) el.hidden=false; }
+function hide(id){ const el=document.getElementById(id); if(el) el.hidden=true; }
+
+async function callApi(action, params={}){
+  try{
+    const res = await fetch(GAS_URL, {method:'POST', body:JSON.stringify(Object.assign({action}, params))});
+    return await res.json();
+  }catch(e){
+    return {success:false, message:'通信エラーが発生しました。'};
+  }
+}
+
+function studentById(id){ return (surveyConfig.students||[]).find(s=>s.id===id); }
+
+function displayName(s){
+  if(!s) return '';
+  const mode = (surveyConfig.surveySettings||{}).surveyNameMode||'yomi';
+  return mode==='yomi' ? (s.yomi||s.name||'') : (s.name||s.yomi||'');
+}
+
+// ==============================
+// 初期化
+// ==============================
+async function init(){
+  const params = new URLSearchParams(location.search);
+  classId = params.get('class')||'';
+  if(!classId){
+    showError('URLに「?class=クラスID」が必要です。先生に確認してください。');
+    return;
+  }
+
+  // GASからアンケート設定を取得
+  const res = await callApi('getSurveyConfig', {classId});
+  hide('loadingCard');
+
+  if(!res.success){
+    showError(res.message || 'クラスが見つかりません。リンクを確認してください。');
+    return;
+  }
+
+  surveyConfig = res;
+  // fixedSeatsをconstraints形式に
+  surveyConfig.fixedSeats = surveyConfig.fixedSeats || {};
+  // seatTemplateのデフォルト補完
+  const total = (surveyConfig.grid.rows||5) * (surveyConfig.grid.cols||6);
+  if(!surveyConfig.seatTemplate || surveyConfig.seatTemplate.length===0){
+    surveyConfig.seatTemplate = Array(total).fill('any');
+  }
+
+  // 先生名をヘッダーに表示
+  if(res.teacherName){
+    document.getElementById('headerSub').textContent = res.teacherName + ' せんせいの クラス';
+  }
+
+  // 締め切りチェック
+  if(res.surveySettings && res.surveySettings.surveyClosed){
+    show('closedCard'); return;
+  }
+
+  // フォーム表示
+  renderPage1();
+  show('surveyForm');
+}
+
+function showError(msg){
+  hide('loadingCard');
+  document.getElementById('errorMsg').textContent = msg;
+  show('errorCard');
+}
+
+// ==============================
+// ページ1：名前選択
+// ==============================
+function renderPage1(){
+  const sel = document.getElementById('surveyStudentSelect');
+  const students = [...(surveyConfig.students||[])].sort((a,b)=>(a.number||0)-(b.number||0));
+  sel.innerHTML = '<option value="">── えらんでください ──</option>' +
+    students.map(s=>`<option value="${escapeHtml(s.id)}" data-gender="${escapeHtml(s.gender||'none')}">${escapeHtml((s.number?s.number+'. ':'') + displayName(s))}</option>`).join('');
+  hide('surveyGenderConfirm');
+  show('surveyPage1');
+  hide('surveyPage2');
+}
+
+function onSurveyStudentChange(){
+  const sel = document.getElementById('surveyStudentSelect');
+  const opt = sel.options[sel.selectedIndex];
+  const g = opt ? (opt.dataset.gender||'none') : 'none';
+  manualGender = 'none';
+  resetGenderBtnStyle();
+
+  if(!sel.value || g !== 'none'){
+    hide('surveyGenderConfirm');
+    document.getElementById('page1NextBtn').style.display = '';
+  } else {
+    show('surveyGenderConfirm');
+    document.getElementById('page1NextBtn').style.display = 'none';
+  }
+}
+
+function setSurveyGender(gender){
+  manualGender = gender;
+  resetGenderBtnStyle();
+  const btn = document.getElementById(gender==='male' ? 'btnMale' : 'btnFemale');
+  if(btn) btn.style.background = gender==='male' ? 'var(--male-bg)' : 'var(--female-bg)';
+  document.getElementById('page1NextBtn').style.display = '';
+}
+
+function resetGenderBtnStyle(){
+  const bm = document.getElementById('btnMale'), bf = document.getElementById('btnFemale');
+  if(bm) bm.style.background = '';
+  if(bf) bf.style.background = '';
+}
+
+// ==============================
+// ページ2：アンケート内容
+// ==============================
+function surveyGoPage2(){
+  const sel = document.getElementById('surveyStudentSelect');
+  const sid = sel ? sel.value : '';
+  if(!sid){ showToast('なまえを えらんでください','error'); return; }
+
+  const opt = sel.options[sel.selectedIndex];
+  const gFromOpt = opt ? (opt.dataset.gender||'none') : 'none';
+  const gFromState = (studentById(sid)||{}).gender||'none';
+  studentGender = manualGender!=='none' ? manualGender : gFromOpt!=='none' ? gFromOpt : gFromState;
+
+  // 回答リセット
+  rowChoices=[]; ranked=[];
+  friendsGood=new Set(); friendsWant=new Set(); friendsAvoid=new Set();
+  document.getElementById('surveyWantPrev').checked=false;
+  document.getElementById('surveyMessage').value='';
+
+  // 名前表示
+  const s = studentById(sid);
+  document.getElementById('page2Name').textContent = (s ? displayName(s) : sid) + ' さん';
+
+  hide('surveyPage1');
+  show('surveyPage2');
+  window.scrollTo(0,0);
+
+  renderSurveySettings();
+  renderSeatGrid();
+  renderFriendLists();
+}
+
+function surveyGoPage1(){
+  studentGender='none'; manualGender='none';
+  hide('surveyGenderConfirm');
+  document.getElementById('page1NextBtn').style.display='';
+  hide('surveyPage2');
+  show('surveyPage1');
+  window.scrollTo(0,0);
+}
+
+function renderSurveySettings(){
+  const q = (surveyConfig.surveySettings||{}).questions||{};
+  const isKanji = (surveyConfig.surveySettings||{}).surveyTextMode==='kanji';
+
+  // 席の希望
+  const seatOn = q.seat && q.seat.on;
+  document.getElementById('seatSection').hidden = !seatOn;
+  if(seatOn){
+    const mode = (q.seat||{}).mode||'rowCircle';
+    const label = q.seat.label || (isKanji ? '席の希望' : 'せきの きぼう');
+    const help = q.seat.help || (mode==='rowCircle'
+      ? (isKanji ? `前から${surveyConfig.grid.rows}行目まで、それぞれ1つずつ、すわりたい席をタップしてください。` : `まえから ${surveyConfig.grid.rows}ぎょうめまで、それぞれ1つずつ、すわりたい せきを タップしてください。`)
+      : (isKanji ? '座りたい席を好きな順にタップしてください（最大3つ）。' : 'すわりたい せきを すきな じゅんに タップしてください（さいだい3つ）。'));
+    document.getElementById('seatHeading').textContent = label;
+    document.getElementById('seatHelp').textContent = help;
+  }
+
+  // 仲の良い子
+  setSection('friendGoodSection','friendGoodHeading','friendGoodHelp',
+    q.good&&q.good.on, q.good&&q.good.label, isKanji?'仲の良い子':'なかの よい こ',
+    q.good&&q.good.help, isKanji?'ずっと仲良しの子を選んでください（いくつでも選べます）。':'ずっと なかよしの こを えらんでください（いくつでも えらべます）。');
+
+  // 仲良くなりたい子
+  setSection('friendWantSection','friendWantHeading','friendWantHelp',
+    q.want&&q.want.on, q.want&&q.want.label, isKanji?'仲良くなりたい子':'なかよく なりたい こ',
+    q.want&&q.want.help, isKanji?'もっと仲良くなりたい子を選んでください（いくつでも選べます）。':'もっと なかよく なりたい こを えらんでください（いくつでも えらべます）。');
+
+  // 避けたい子
+  setSection('friendAvoidSection','friendAvoidHeading','friendAvoidHelp',
+    q.avoid&&q.avoid.on, q.avoid&&q.avoid.label, isKanji?'近くではないほうがいい子':'ちかくではないほうがいい こ',
+    q.avoid&&q.avoid.help, isKanji?'近くになると気になる子を選んでください。先生だけが見ます（いくつでも選べます）。':'ちかくに なると きになる こを えらんでください。せんせいだけが みます。（いくつでも えらべます）');
+
+  // 前の席
+  document.getElementById('prevSection').hidden = !(q.prev&&q.prev.on);
+  if(q.prev&&q.prev.on){
+    document.getElementById('prevLabel').textContent = q.prev.label || (isKanji ? '前の席が良い' : 'まえの せきが いい');
+  }
+
+  // メッセージ
+  setSection('msgSection','msgHeading',null,
+    q.msg&&q.msg.on, q.msg&&q.msg.label, isKanji?'先生に伝えたいこと':'せんせいに つたえたいこと',
+    null, null);
+}
+
+function setSection(sectionId, headingId, helpId, on, labelOverride, defaultLabel, helpOverride, defaultHelp){
+  document.getElementById(sectionId).hidden = !on;
+  if(!on) return;
+  document.getElementById(headingId).textContent = labelOverride || defaultLabel;
+  if(helpId && (helpOverride||defaultHelp)){
+    document.getElementById(helpId).textContent = helpOverride || defaultHelp || '';
+  }
+}
+
+// ==============================
+// 座席グリッド
+// ==============================
+function renderSeatGrid(){
+  const grid = document.getElementById('surveySeatGrid');
+  const cols = surveyConfig.grid.cols || 6;
+  grid.style.gridTemplateColumns = `repeat(${cols},1fr)`;
+
+  const mode = ((surveyConfig.surveySettings||{}).questions||{}).seat&&((surveyConfig.surveySettings||{}).questions||{}).seat.mode || 'rowCircle';
+  const isKanji = (surveyConfig.surveySettings||{}).surveyTextMode==='kanji';
+  const fixedSet = new Set(Object.values(surveyConfig.fixedSeats||{}).map(Number));
+  const tpl = surveyConfig.seatTemplate || [];
+
+  grid.innerHTML = '';
+  tpl.forEach((t, i)=>{
+    const row = Math.floor(i / cols);
+    const cell = document.createElement('div');
+
+    if(t==='disabled'){
+      cell.className='seat disabled';
+      cell.textContent = isKanji ? '選べません' : 'えらべません';
+      grid.appendChild(cell); return;
+    }
+
+    const genderMismatch = studentGender!=='none' && (
+      (t==='male'   && studentGender==='female') ||
+      (t==='female' && studentGender==='male')
+    );
+
+    if(fixedSet.has(i) || genderMismatch){
+      cell.className='seat disabled';
+      if(t==='male')   cell.classList.add('male');
+      if(t==='female') cell.classList.add('female');
+      if(t==='any')    cell.classList.add('any');
+      cell.textContent = isKanji ? '選べません' : 'えらべません';
+      grid.appendChild(cell); return;
+    }
+
+    cell.className='seat interactive';
+    if(t==='male')   cell.classList.add('male');
+    if(t==='female') cell.classList.add('female');
+    if(t==='any')    cell.classList.add('any');
+
+    let inner = '';
+    if(mode==='rowCircle'){
+      inner += `<div class="row-label">${isKanji?row+1+'行目':(row+1)+'ぎょうめ'}</div>`;
+      if(rowChoices[row]===i){
+        cell.classList.add('selected');
+        inner += '<div class="mark">◯</div>';
+      }
+    } else {
+      const pos = ranked.indexOf(i);
+      if(pos>=0){
+        cell.classList.add('selected');
+        inner += `<div class="mark">${pos+1}</div>`;
+      }
+    }
+
+    // 座席名（よみ/漢字）
+    const nameMode = (surveyConfig.surveySettings||{}).seatNameMode||'yomi';
+    if(t!=='any'){
+      const lbl = t==='male' ? (nameMode==='kanji'?'男子席':'だんしせき') : (nameMode==='kanji'?'女子席':'じょしせき');
+      inner += `<div class="seat-name">${lbl}</div>`;
+    }
+
+    cell.innerHTML = inner;
+    cell.addEventListener('click', ()=>onTap(i));
+    grid.appendChild(cell);
+  });
+}
+
+function onTap(idx){
+  const tpl = surveyConfig.seatTemplate || [];
+  const fixedSet = new Set(Object.values(surveyConfig.fixedSeats||{}).map(Number));
+  const t = tpl[idx] || 'any';
+  const genderMismatch = studentGender!=='none' && (
+    (t==='male'   && studentGender==='female') ||
+    (t==='female' && studentGender==='male')
+  );
+  if(t==='disabled' || fixedSet.has(idx) || genderMismatch) return;
+
+  const cols = surveyConfig.grid.cols || 6;
+  const mode = ((surveyConfig.surveySettings||{}).questions||{}).seat&&((surveyConfig.surveySettings||{}).questions||{}).seat.mode || 'rowCircle';
+  if(mode==='rowCircle'){
+    const row = Math.floor(idx/cols);
+    rowChoices[row] = (rowChoices[row]===idx) ? undefined : idx;
+  } else {
+    const pos = ranked.indexOf(idx);
+    if(pos>=0) ranked.splice(pos,1);
+    else if(ranked.length<3) ranked.push(idx);
+  }
+  renderSeatGrid();
+}
+
+// ==============================
+// 友達リスト
+// ==============================
+function renderFriendLists(){
+  const sel = document.getElementById('surveyStudentSelect');
+  const sid = sel ? sel.value : '';
+  const students = [...(surveyConfig.students||[])].sort((a,b)=>(a.number||0)-(b.number||0)).filter(s=>s.id!==sid);
+  const q = (surveyConfig.surveySettings||{}).questions||{};
+  const max = { good: q.good&&q.good.max||3, want: q.want&&q.want.max||3, avoid: q.avoid&&q.avoid.max||3 };
+
+  makeList('friendListGood',  friendsGood,  students, max.good);
+  makeList('friendListWant',  friendsWant,  students, max.want);
+  makeList('friendListAvoid', friendsAvoid, students, max.avoid);
+}
+
+function makeList(elId, setRef, students, maxN){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  el.innerHTML = students.map(s=>{
+    const checked = setRef.has(s.id);
+    return `<label class="friend-check ${checked?'selected':''}" data-id="${escapeHtml(s.id)}" data-list="${elId}">
+      <input type="checkbox" ${checked?'checked':''} onchange="toggleFriend('${escapeHtml(elId)}','${escapeHtml(s.id)}',${maxN},this)">
+      <div><div class="fc-name">${escapeHtml(s.name||s.yomi||'')}</div><div class="fc-yomi">${escapeHtml(s.yomi||'')}</div></div>
+    </label>`;
+  }).join('');
+}
+
+function toggleFriend(listId, sid, maxN, cb){
+  const setMap = {friendListGood:friendsGood, friendListWant:friendsWant, friendListAvoid:friendsAvoid};
+  const s = setMap[listId];
+  if(!s) return;
+  if(cb.checked){
+    if(s.size>=maxN){ cb.checked=false; showToast(`さいだい${maxN}にん までです`,'error'); return; }
+    s.add(sid);
+  } else { s.delete(sid); }
+  // ラベルのスタイル更新
+  const label = cb.closest('.friend-check');
+  if(label) label.classList.toggle('selected', cb.checked);
+}
+
+// ==============================
+// 音声入力
+// ==============================
+let recognition = null;
+function startVoiceInput(){
+  const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SpeechRec){ showToast('このブラウザは音声入力に対応していません','error'); return; }
+  if(recognition){ recognition.stop(); recognition=null; return; }
+  recognition = new SpeechRec();
+  recognition.lang='ja-JP'; recognition.continuous=false; recognition.interimResults=false;
+  recognition.onresult=e=>{ document.getElementById('surveyMessage').value+=e.results[0][0].transcript; };
+  recognition.onend=()=>{ recognition=null; };
+  recognition.onerror=()=>{ recognition=null; showToast('音声入力エラー','error'); };
+  recognition.start();
+}
+
+// ==============================
+// 送信
+// ==============================
+async function submitSurvey(){
+  const sel = document.getElementById('surveyStudentSelect');
+  const sid = sel ? sel.value : '';
+  if(!sid){ showToast('なまえを えらんでください','error'); return; }
+
+  const q = (surveyConfig.surveySettings||{}).questions||{};
+  const mode = q.seat&&q.seat.mode || 'rowCircle';
+  const isKanji = (surveyConfig.surveySettings||{}).surveyTextMode==='kanji';
+  let seatPref = {mode:'none'};
+
+  if(q.seat && q.seat.on && mode!=='none'){
+    if(mode==='rowCircle'){
+      const rows=surveyConfig.grid.rows||5, cols=surveyConfig.grid.cols||6;
+      const tpl=surveyConfig.seatTemplate||[];
+      for(let r=0;r<rows;r++){
+        // その行に選べる席があるか
+        let hasUsable=false;
+        for(let c=0;c<cols;c++){
+          const idx=r*cols+c, t=tpl[idx]||'any';
+          const fixedSet=new Set(Object.values(surveyConfig.fixedSeats||{}).map(Number));
+          const gm=studentGender!=='none'&&((t==='male'&&studentGender==='female')||(t==='female'&&studentGender==='male'));
+          if(t!=='disabled'&&!fixedSet.has(idx)&&!gm) hasUsable=true;
+        }
+        if(!hasUsable) continue;
+        if(rowChoices[r]===undefined){
+          alert(isKanji ? `${r+1}行目の席に◯がついていません。全ての行から1つ選んでください。` : `${r+1}ぎょうめの せきに ◯が ついていません。ぜんぶの ぎょうから 1つ えらんでください。`);
+          return;
+        }
+      }
+      seatPref={mode:'rowCircle',rowChoices:rowChoices.slice(0,rows)};
+    } else if(mode==='top3'){
+      if(ranked.length===0){ alert(isKanji?'希望する席を少なくとも1つタップしてください。':'きぼうする せきを すくなくとも1つ タップしてください。'); return; }
+      seatPref={mode:'top3',ranked:[...ranked]};
+    }
+  }
+
+  const s = studentById(sid);
+  const result = {
+    studentId: sid,
+    studentName: s ? s.name : sid,
+    seatPref,
+    friendsGood:  (q.good&&q.good.on)  ? Array.from(friendsGood)  : [],
+    friendsWant:  (q.want&&q.want.on)  ? Array.from(friendsWant)  : [],
+    friendsAvoid: (q.avoid&&q.avoid.on)? Array.from(friendsAvoid) : [],
+    friends: Array.from(new Set([...friendsGood,...friendsWant])),
+    wantPrevSeat: (q.prev&&q.prev.on) ? document.getElementById('surveyWantPrev').checked : false,
+    message: (q.msg&&q.msg.on) ? (document.getElementById('surveyMessage').value||'').trim() : '',
+    submittedAt: new Date().toISOString()
+  };
+
+  const btn = document.getElementById('submitBtn');
+  if(btn){ btn.disabled=true; btn.textContent='おくっています…'; }
+
+  const res = await callApi('submitSurveyResponse', {classId, response:result});
+
+  if(btn){ btn.disabled=false; btn.textContent='📤 かいとうを おくる'; }
+
+  if(res.success){
+    hide('surveyForm');
+    show('surveyDone');
+    window.scrollTo(0,0);
+  } else {
+    alert('おくれませんでした。インターネットの つながりを たしかめて、もう いちど ためしてください。\n('+(res.message||'')+')');
+  }
+}
+
+// ==============================
+// 起動
+// ==============================
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

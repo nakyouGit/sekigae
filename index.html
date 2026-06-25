@@ -930,8 +930,8 @@
 
         <h2>児童アンケート用リンク</h2>
         <div class="card">
-          <div class="help" style="margin-top:0;">「リンクを生成」を押すと、その時点の名簿・座席設定を埋め込んだリンクが作られます。このリンクを児童に配ると、GASに接続しなくても正しいアンケートが表示されます。</div>
-          <button class="btn-primary" style="width:100%;margin-bottom:10px;" onclick="generateSurveyLink()">🔗 アンケートリンクを生成</button>
+          <div class="help" style="margin-top:0;">このリンクはいつも同じです。児童に配る前に「名簿を保存」を押してください。名簿や座席の設定を変えたら、もう一度「名簿を保存」を押せば最新の内容が反映されます。</div>
+          <button class="btn-primary" style="width:100%;margin-bottom:10px;" onclick="generateSurveyLink()">💾 名簿を保存してリンクを用意</button>
           <div class="copy-row">
             <input type="text" id="surveyLinkInput" readonly placeholder="上のボタンを押すとリンクが生成されます">
             <button class="btn-secondary" onclick="copySurveyLink()">コピー</button>
@@ -1463,6 +1463,15 @@
             <div class="auth-success" id="adminAppUrlMsg"></div>
           </div>
 
+          <h2>GASのURL（確認用）</h2>
+          <div class="card">
+            <div class="help" style="margin-top:0;">現在接続中のGAS URLです。GASを再デプロイしてURLが変わった場合は、HTMLファイル内のURLを書き換えてGitHubに再アップロードしてください。</div>
+            <div class="copy-row">
+              <input type="text" id="adminGasUrlDisplay" readonly style="font-size:11px;">
+              <button class="btn-secondary" onclick="navigator.clipboard.writeText(document.getElementById('adminGasUrlDisplay').value).then(()=>showToast('コピーしました','ok'))">コピー</button>
+            </div>
+          </div>
+
           <h2>管理者画面のパスワード変更</h2>
           <div class="card">
             <div class="field-group">
@@ -1611,7 +1620,7 @@
 /* ---------- state ---------- */
 /* ====================== 設定 ====================== */
 // ここにGASのウェブアプリURL（デプロイ後に取得したURL）を設定してください
-let GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzr0IEUmTLdokz7AZBFm8e-50HE1Ay5pumcgNgKLKH453DN9Sa_heLKXv0P-tvOu4hGMg/exec';
+let GAS_API_URL = 'https://script.google.com/macros/s/AKfycbxg_Yk64-pqJX6SZrPGuNp-F-QtAzhvSJBhQrcpwVzZoxLGl8sD4XYc8FuFbkVbH-kr4w/exec';
 
 const AUTH_KEY = 'sekigaeAuthInfo'; // {token, teacherId, role, displayName, email}
 
@@ -2159,7 +2168,7 @@ async function initPublicSurveyFromData(encoded){
 
   let payload;
   try {
-    payload = JSON.parse(decodeURIComponent(encoded));
+    payload = JSON.parse(decodeURIComponent(escape(atob(encoded))));
   } catch(e) {
     document.getElementById('publicSurveyForm').innerHTML =
       '<div class="card"><h2 style="border:none;padding-left:0;">エラー</h2>' +
@@ -2225,14 +2234,6 @@ async function initPublicSurvey(classId){
   state.constraints.fixedSeats = res.fixedSeats || {};
   ensureSeatTemplate();
 
-  // デバッグ表示（本番確認用）
-  console.log('[DEBUG getSurveyConfig]', JSON.stringify({
-    students_count: state.students.length,
-    student_0: state.students[0]||null,
-    seatTemplate_0_5: state.seatTemplate.slice(0,6),
-    fixedSeats: state.constraints.fixedSeats,
-  }));
-
   // 締め切りチェック
   if(state.surveySettings.surveyClosed){
     document.getElementById('publicSurveyForm').innerHTML =
@@ -2263,10 +2264,7 @@ async function initPublicSurvey(classId){
 function init(){
   const params = new URLSearchParams(location.search);
   const classId   = params.get('class');
-  // ?d= パラメータは生文字列から取得（URLSearchParams.getは自動デコードするため使わない）
-  const rawSearch = location.search;
-  const dMatch = rawSearch.match(/[?&]d=([^&]*)/);
-  const encoded = dMatch ? dMatch[1] : null;
+  const encoded   = params.get('d');
   const resetToken = params.get('reset');
 
   if(resetToken){
@@ -2274,15 +2272,17 @@ function init(){
     showAuthScreen('resetpw');
   }
 
-  // 新方式：?d= にデータが埋め込まれている
-  if(encoded){
-    initPublicSurveyFromData(encoded);
+  // ?class= でアクセスされた場合は児童用ページ（survey.html）にリダイレクト
+  if(classId){
+    const base = location.origin + location.pathname.replace(/[^/]*$/, '');
+    location.replace(base + 'survey.html?class=' + encodeURIComponent(classId));
     return;
   }
 
-  // 旧方式：?class= でGASから取得
-  if(classId){
-    initPublicSurvey(classId);
+  // 旧方式（後方互換）：?d= 埋め込みデータも survey.html へ
+  if(encoded){
+    const base = location.origin + location.pathname.replace(/[^/]*$/, '');
+    location.replace(base + 'survey.html?d=' + encoded);
     return;
   }
 
@@ -4277,7 +4277,7 @@ function savePrevious(){
 }
 
 /* ---------- 席替え履歴 ---------- */
-const SEAT_HISTORY_MAX = 5;
+const SEAT_HISTORY_MAX = 10;
 
 function addSeatHistory(){
   if(!state.currentSeating) return;
@@ -4300,7 +4300,7 @@ function renderSeatHistory(){
   if(!el) return;
   const history = state.seatHistory || [];
   if(history.length === 0){
-    el.innerHTML = '<div class="help" style="margin:0;">まだ履歴がありません。「📌 席替え確定」を押すと保存されます。</div>';
+    el.innerHTML = '<div class="help" style="margin:0;">まだ履歴がありません。「📌 席替え確定」を押すと保存されます（最大10件）。</div>';
     return;
   }
   el.innerHTML = history.map((entry, i)=>{
@@ -4313,35 +4313,74 @@ function renderSeatHistory(){
         <div style="font-weight:700;font-size:13px;">${i===0?'🕐 最新　':''}${label}</div>
         <div style="font-size:12px;color:var(--text-sub);">${clsLabel} ${(entry.students||[]).length}名</div>
       </div>
-      <button class="btn-secondary" style="font-size:12px;" onclick="previewSeatHistory(${i})">👁 確認</button>
+      <button class="btn-secondary" style="font-size:12px;" onclick="printSeatHistory(${i})">📄 PDF</button>
       <button class="btn-secondary" style="font-size:12px;" onclick="restoreSeatHistory(${i})">↩ 復元</button>
       <button class="btn-x" onclick="deleteSeatHistory(${i})">×</button>
     </div>`;
   }).join('');
 }
 
-async function previewSeatHistory(idx){
+// 履歴の座席表を日付入りPDF（印刷）で出力する
+function printSeatHistory(idx){
   const entry = (state.seatHistory||[])[idx];
-  if(!entry) return;
+  if(!entry){ showToast('履歴が見つかりません','error'); return; }
   const cols = (entry.grid||{}).cols || 6;
-  const rows = (entry.grid||{}).rows || 5;
   const stuMap = {};
   (entry.students||[]).forEach(s=>stuMap[s.id]=s);
   const date = new Date(entry.savedAt);
-  const label = `${date.getFullYear()}/${date.getMonth()+1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2,'0')}`;
+  const dateLabel = `${date.getFullYear()}年${date.getMonth()+1}月${date.getDate()}日 ${date.getHours()}:${String(date.getMinutes()).padStart(2,'0')}`;
+  const cls = entry.classInfo||{};
+  const clsLabel = (cls.grade&&cls.group) ? `${cls.grade}年${cls.group}組` : '';
 
-  let grid = `<div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:2px;margin-top:8px;max-width:320px;">`;
+  // 座席セルのHTMLを組み立て
+  let cells = '';
   (entry.seating||[]).forEach((sid, i)=>{
     const tpl = (entry.seatTemplate||[])[i]||'any';
-    if(tpl==='disabled'){ grid+=`<div style="background:#ccc;border-radius:4px;padding:2px;font-size:8px;text-align:center;color:#888;">×</div>`; return; }
+    if(tpl==='disabled'){
+      cells += `<div class="seat disabled"></div>`;
+      return;
+    }
     const s = sid ? stuMap[sid] : null;
-    const bg = tpl==='male'?'#a8d4f0':tpl==='female'?'#f4aab4':'#e9d6b3';
-    const name = s ? (s.name||s.yomi||'').replace(/\s/g,'') : '';
-    grid+=`<div style="background:${bg};border-radius:4px;padding:2px;font-size:8px;text-align:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${escapeHtml(name)}</div>`;
+    const cls2 = tpl==='male'?'male':tpl==='female'?'female':'any';
+    const name = s ? escapeHtml((s.name||s.yomi||'').trim()) : '';
+    cells += `<div class="seat ${cls2}">${name}</div>`;
   });
-  grid+='</div>';
 
-  await showDialog(`📋 ${label} の座席表`, grid, [{label:'閉じる', cls:'dialog-ok', value:null}]);
+  const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">
+<title>座席表 ${dateLabel}</title>
+<style>
+  @page{ size:A4 landscape; margin:12mm; }
+  *{ box-sizing:border-box; }
+  body{ font-family:"Hiragino Sans","Yu Gothic",sans-serif; margin:0; padding:16px; color:#222; }
+  .head{ text-align:center; margin-bottom:14px; }
+  .head h1{ font-size:20px; margin:0 0 4px; }
+  .head .date{ font-size:14px; color:#555; }
+  .blackboard{ background:#222; color:#fff; text-align:center; padding:8px; border-radius:6px; font-size:14px; font-weight:700; margin-bottom:12px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .grid{ display:grid; grid-template-columns:repeat(${cols},1fr); gap:6px; }
+  .seat{ border:1.5px solid #555; border-radius:8px; min-height:64px; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:600; text-align:center; padding:4px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .seat.male{ background:#dcecf9; }
+  .seat.female{ background:#fbe2e7; }
+  .seat.any{ background:#f4ecd9; }
+  .seat.disabled{ background:#e8e8e8; border-style:dashed; }
+  @media print{ button{ display:none; } }
+  .printbtn{ display:block; margin:16px auto 0; padding:10px 24px; font-size:15px; background:#4a7c59; color:#fff; border:none; border-radius:8px; cursor:pointer; }
+</style></head>
+<body>
+  <div class="head">
+    <h1>🐸 ${clsLabel} 座席表</h1>
+    <div class="date">${dateLabel} 確定</div>
+  </div>
+  <div class="blackboard">⬛ こくばん（教室の前）</div>
+  <div class="grid">${cells}</div>
+  <button class="printbtn" onclick="window.print()">🖨️ 印刷・PDF保存</button>
+  <script>window.onload=function(){ setTimeout(function(){ window.print(); }, 400); };<\/script>
+</body></html>`;
+
+  const w = window.open('', '_blank');
+  if(!w){ showToast('ポップアップがブロックされました。設定を確認してください。','error'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
 }
 
 async function restoreSeatHistory(idx){
@@ -5124,41 +5163,31 @@ function renderAccountInfo(){
 
 function renderSurveyLink(){
   if(!currentTeacher) return;
-  // 既存リンクがあればそのまま表示（生成ボタンを押すまでは変えない）
+  const classId = currentTeacher.uid || currentTeacher.teacherId || '';
+  // 児童用ページ（survey.html）への固定リンク
+  const base = location.origin + location.pathname.replace(/[^/]*$/, '');
+  const url = base + 'survey.html?class=' + encodeURIComponent(classId);
+  const input = document.getElementById('surveyLinkInput');
+  if(input) input.value = url;
   renderSurveyStatus();
 }
 
-function generateSurveyLink(){
+async function generateSurveyLink(){
   if(!currentTeacher){ showToast('ログインが必要です','error'); return; }
   if(!state.students || state.students.length===0){
     showToast('先に名簿を登録してください','error'); return;
   }
-
-  // URLに埋め込むデータ（students含む）
-  const payload = {
-    v: 1,
-    classId:       currentTeacher.uid,
-    gasUrl:        GAS_API_URL,
-    students:      state.students.map(s=>({
-      id:     s.id,
-      number: s.number||'',
-      name:   s.name,
-      yomi:   s.yomi||s.name,
-      gender: s.gender||'none',
-    })),
-    grid:          state.grid,
-    seatTemplate:  state.seatTemplate,
-    surveySettings: state.surveySettings,
-    fixedSeats:    state.constraints.fixedSeats||{},
-    surveyClosed:  !!(state.surveySettings && state.surveySettings.surveyClosed),
-  };
-
-  // URLエンコード（日本語対応・シンプルで確実）
-  const encoded = encodeURIComponent(JSON.stringify(payload));
-  const url = location.origin + location.pathname + '?d=' + encoded;
-
-  document.getElementById('surveyLinkInput').value = url;
-  showToast('リンクを生成しました。コピーして児童に配ってください。', 'ok', 3000);
+  // 最新データをGASに保存してからリンクを表示
+  setSaveIndicator('saving', '💾 保存中…');
+  const res = await callApi('saveClassData', {token: authToken, data: state});
+  if(!(res && res.success)){
+    setSaveIndicator('error', '⚠️ 保存に失敗しました');
+    showToast('保存に失敗しました。もう一度お試しください。', 'error');
+    return;
+  }
+  setSaveIndicator('saved', '✅ 保存しました');
+  renderSurveyLink();
+  showToast('保存しました。このリンクを児童に配ってください。', 'ok', 3500);
 }
 
 function renderSurveyStatus(){
@@ -5374,6 +5403,8 @@ async function loadAdminPanel(){
   await renderAdminTeacherList();
   await renderAdminLoginHistory();
   await renderAdminSettings();
+  const el = document.getElementById('adminGasUrlDisplay');
+  if(el) el.value = GAS_API_URL;
 }
 
 async function renderAdminTeacherList(){
