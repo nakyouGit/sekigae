@@ -860,7 +860,7 @@
 
   <div class="mode-switch">
     <button class="mode-btn active" id="modeTeacherBtn" onclick="switchMode('teacher')">👩‍🏫 先生用</button>
-    <button class="mode-btn" id="modeStudentBtn" onclick="switchMode('student')">🧑‍🎓 きぼうを かく（じぶんで にゅうりょく）</button>
+    <button class="mode-btn" id="modeStudentBtn" onclick="switchMode('student')">👁 アンケートプレビュー</button>
   </div>
 
   <!-- ===================== TEACHER AREA ===================== -->
@@ -1357,7 +1357,7 @@
             <button class="btn-secondary" onclick="backToCandidates()">← 案を選び直す</button>
             <button class="btn-secondary" onclick="undoSeating()" id="undoBtn" disabled>↩ 戻す</button>
             <button class="btn-secondary" onclick="savePrevious()">📌 席替え確定</button>
-            <button class="btn-secondary" onclick="window.print()">🖨️ 印刷</button>
+            <button class="btn-secondary" onclick="printTeacherView()">🖨️ 印刷（先生目線）</button>
           </div>
           <div class="result-actions" style="gap:8px;">
             <button class="btn-secondary" id="editModeBtn" onclick="toggleEditMode()">✏️ 手動で席を入れ替える</button>
@@ -1560,7 +1560,7 @@
       <div id="section_friendGood">
       <h2 id="h_friendGood">なかの よい こ</h2>
       <div class="card">
-        <div class="help" id="d_friendGood">ずっと なかよしの こを えらんでください（いくつでも えらべます）。</div>
+        <div class="help" id="d_friendGood">ずっと なかよしの こを えらんでください。</div>
         <div class="friend-list" id="friendListGood"></div>
       </div>
       </div>
@@ -1568,7 +1568,7 @@
       <div id="section_friendWant">
       <h2 id="h_friendWant">なかよく なりたい こ</h2>
       <div class="card">
-        <div class="help" id="d_friendWant">もっと なかよく なりたい こを えらんでください（いくつでも えらべます）。</div>
+        <div class="help" id="d_friendWant">もっと なかよく なりたい こを えらんでください。</div>
         <div class="friend-list" id="friendListWant"></div>
       </div>
       </div>
@@ -1576,7 +1576,7 @@
       <div id="section_friendAvoid">
       <h2 id="h_friendAvoid">ちかくではないほうがいい こ</h2>
       <div class="card">
-        <div class="help" id="d_friendAvoid">ちかくに なると きになる こを えらんでください。せんせいだけが みます。（いくつでも えらべます）</div>
+        <div class="help" id="d_friendAvoid">ちかくに なると きになる こを えらんでください。せんせいだけが みます。</div>
         <div class="friend-list" id="friendListAvoid"></div>
       </div>
       </div>
@@ -3230,9 +3230,9 @@ function renderDisciplineList(){
 const SURVEY_DEFAULTS = {
   yomi: {
     seat:  { label: 'きぼうの せきを えらんでください', help: '' },
-    good:  { label: 'なかの よい こ',   help: 'ずっと なかよしの こを えらんでください（いくつでも えらべます）。' },
-    want:  { label: 'なかよく なりたい こ', help: 'もっと なかよく なりたい こを えらんでください（いくつでも えらべます）。' },
-    avoid: { label: 'ちかくではないほうがいい こ', help: 'ちかくに なると きになる こを えらんでください。せんせいだけが みます。（いくつでも えらべます）' },
+    good:  { label: 'なかの よい こ',   help: 'ずっと なかよしの こを えらんでください。' },
+    want:  { label: 'なかよく なりたい こ', help: 'もっと なかよく なりたい こを えらんでください。' },
+    avoid: { label: 'ちかくではないほうがいい こ', help: 'ちかくに なると きになる こを えらんでください。せんせいだけが みます。' },
     prev:  { label: 'まえの せきが いい' },
     msg:   { label: 'せんせいに つたえたいこと', help: 'こまっていることや きもちを じゆうに かいてください。' },
     heading_seat: 'せきの きぼう',
@@ -3248,9 +3248,9 @@ const SURVEY_DEFAULTS = {
   },
   kanji: {
     seat:  { label: '希望する座席を選んでください', help: '' },
-    good:  { label: '仲のよい友達',   help: 'いつも仲よくしている友達を選んでください（複数選択可）。' },
-    want:  { label: '仲よくなりたい友達', help: 'もっと仲よくなりたい友達を選んでください（複数選択可）。' },
-    avoid: { label: 'ちかくではないほうがいい子', help: 'ちかくになると気になる子を選んでください。先生だけが見ます。（複数選択可）' },
+    good:  { label: '仲のよい友達',   help: 'いつも仲よくしている友達を選んでください。' },
+    want:  { label: '仲よくなりたい友達', help: 'もっと仲よくなりたい友達を選んでください。' },
+    avoid: { label: 'ちかくではないほうがいい子', help: 'ちかくになると気になる子を選んでください。先生だけが見ます。' },
     prev:  { label: '前の席がよい' },
     msg:   { label: '先生へのメッセージ', help: '困っていることや席についての気持ちを自由に書いてください。' },
     heading_seat: '座席の希望',
@@ -4327,15 +4327,16 @@ function printSeatHistory(idx){
   const cols = (entry.grid||{}).cols || 6;
   const stuMap = {};
   (entry.students||[]).forEach(s=>stuMap[s.id]=s);
-  const date = new Date(entry.savedAt);
-  const dateLabel = `${date.getFullYear()}年${date.getMonth()+1}月${date.getDate()}日 ${date.getHours()}:${String(date.getMinutes()).padStart(2,'0')}`;
   const cls = entry.classInfo||{};
   const clsLabel = (cls.grade&&cls.group) ? `${cls.grade}年${cls.group}組` : '';
 
-  // 座席セルのHTMLを組み立て
+  // 先生目線：配列を逆順（180°回転）
+  const seatingReversed = (entry.seating||[]).slice().reverse();
+  const tplReversed = (entry.seatTemplate||[]).slice().reverse();
+
   let cells = '';
-  (entry.seating||[]).forEach((sid, i)=>{
-    const tpl = (entry.seatTemplate||[])[i]||'any';
+  seatingReversed.forEach((sid, i)=>{
+    const tpl = tplReversed[i]||'any';
     if(tpl==='disabled'){
       cells += `<div class="seat disabled"></div>`;
       return;
@@ -4347,33 +4348,37 @@ function printSeatHistory(idx){
   });
 
   const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">
-<title>座席表 ${dateLabel}</title>
+<title>${clsLabel} 座席表</title>
 <style>
   @page{ size:A4 landscape; margin:12mm; }
   *{ box-sizing:border-box; }
   body{ font-family:"Hiragino Sans","Yu Gothic",sans-serif; margin:0; padding:16px; color:#222; }
-  .head{ text-align:center; margin-bottom:14px; }
-  .head h1{ font-size:20px; margin:0 0 4px; }
-  .head .date{ font-size:14px; color:#555; }
-  .blackboard{ background:#222; color:#fff; text-align:center; padding:8px; border-radius:6px; font-size:14px; font-weight:700; margin-bottom:12px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px; border-bottom:2px solid #333; padding-bottom:8px; }
+  .head h1{ font-size:22px; font-weight:800; margin:0; }
+  .date-area{ display:flex; align-items:center; gap:8px; }
+  .date-area label{ font-size:13px; color:#555; }
+  .date-area input{ font-size:15px; border:1px solid #aaa; border-radius:4px; padding:4px 8px; width:180px; font-family:inherit; }
+  @media print{ .date-area input{ border:none; font-size:15px; } .printbtn{ display:none; } .no-print{ display:none; } }
+  .blackboard{ background:#222; color:#fff; text-align:center; padding:8px; border-radius:6px; font-size:16px; font-weight:800; letter-spacing:.2em; margin-top:12px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   .grid{ display:grid; grid-template-columns:repeat(${cols},1fr); gap:6px; }
-  .seat{ border:1.5px solid #555; border-radius:8px; min-height:64px; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:600; text-align:center; padding:4px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .seat{ border:1.5px solid #555; border-radius:8px; min-height:60px; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:600; text-align:center; padding:4px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   .seat.male{ background:#dcecf9; }
   .seat.female{ background:#fbe2e7; }
   .seat.any{ background:#f4ecd9; }
   .seat.disabled{ background:#e8e8e8; border-style:dashed; }
-  @media print{ button{ display:none; } }
-  .printbtn{ display:block; margin:16px auto 0; padding:10px 24px; font-size:15px; background:#4a7c59; color:#fff; border:none; border-radius:8px; cursor:pointer; }
+  .printbtn{ display:block; margin:16px auto 0; padding:10px 28px; font-size:15px; background:#2d5a3d; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:700; }
 </style></head>
 <body>
   <div class="head">
-    <h1>🐸 ${clsLabel} 座席表</h1>
-    <div class="date">${dateLabel} 確定</div>
+    <h1>${clsLabel}　座席表</h1>
+    <div class="date-area">
+      <label for="printDate">日付</label>
+      <input type="text" id="printDate" placeholder="例：令和8年6月25日">
+    </div>
   </div>
-  <div class="blackboard">⬛ こくばん（教室の前）</div>
   <div class="grid">${cells}</div>
-  <button class="printbtn" onclick="window.print()">🖨️ 印刷・PDF保存</button>
-  <script>window.onload=function(){ setTimeout(function(){ window.print(); }, 400); };<\/script>
+  <div class="blackboard">黒　板</div>
+  <button class="printbtn no-print" onclick="window.print()">🖨️ 印刷・PDF保存</button>
 </body></html>`;
 
   const w = window.open('', '_blank');
@@ -4406,7 +4411,59 @@ async function deleteSeatHistory(idx){
   saveState();
 }
 
-/* ====================== 手動編集モード（finalSection） ====================== */
+/* ---------- 先生目線印刷 ---------- */
+function printTeacherView(){
+  // 座席グリッドと黒板ラベルを取得
+  const finalSection = document.getElementById('finalSection');
+  const grid = finalSection ? finalSection.querySelector('.seat-grid') : null;
+  const boardLabel = finalSection ? finalSection.querySelector('.blackboard-label') : null;
+  if(!grid){ window.print(); return; }
+
+  // 座席セルを逆順に並び替え（180°回転 = 先生目線）
+  const cells = Array.from(grid.children);
+  cells.reverse().forEach(c => grid.appendChild(c));
+
+  // 黒板ラベルを下に移動
+  if(boardLabel){
+    boardLabel.dataset.origText = boardLabel.textContent;
+    boardLabel.textContent = boardLabel.textContent.replace('（教室の前）','（先生の背後）');
+    // gridの後ろに移動
+    grid.parentNode.insertBefore(boardLabel, grid.nextSibling);
+    boardLabel.dataset.moved = '1';
+  }
+
+  // 先生目線注記を追加
+  const note = document.createElement('div');
+  note.id = 'teacherViewNote';
+  note.style.cssText = 'text-align:center;font-size:11px;color:#777;margin-bottom:6px;';
+  note.textContent = '👁 先生目線（黒板を背にした向き）';
+  grid.parentNode.insertBefore(note, grid);
+
+  window.print();
+
+  // 印刷後に元に戻す
+  // afterprintイベントで復元
+  function restore(){
+    // 注記を削除
+    const n = document.getElementById('teacherViewNote');
+    if(n) n.remove();
+
+    // セルを元の順に戻す
+    const cells2 = Array.from(grid.children);
+    cells2.reverse().forEach(c => grid.appendChild(c));
+
+    // 黒板ラベルを元の位置に戻す
+    if(boardLabel && boardLabel.dataset.moved){
+      boardLabel.textContent = boardLabel.dataset.origText || boardLabel.textContent;
+      delete boardLabel.dataset.moved;
+      // gridの前に戻す
+      grid.parentNode.insertBefore(boardLabel, grid);
+    }
+
+    window.removeEventListener('afterprint', restore);
+  }
+  window.addEventListener('afterprint', restore);
+}
 let editMode = false;
 let selectedSeatIdx = null;   // 配置済み席の選択
 let selectedEditChip = null;  // 未配置チップの選択
@@ -4824,8 +4881,11 @@ function renderStudentSurvey(){
     const d = document.getElementById('d_friendGood');
     if(h) h.textContent = q.good.label || getDefaultText('good','label');
     const maxGood = q.good.max ? parseInt(q.good.max) : null;
-    const helpGood = q.good.help || getDefaultText('good','help');
-    if(d) d.textContent = helpGood + (maxGood ? `（さいだい${maxGood}人まで）` : '');
+    const baseHelp = q.good.help || getDefaultText('good','help');
+    const maxText = maxGood
+      ? (getSurveyTextMode()==='kanji' ? `（最大${maxGood}人まで）` : `（さいだい${maxGood}にん まで）`)
+      : (getSurveyTextMode()==='kanji' ? '（複数選択可）' : '（いくつでも えらべます）');
+    if(d) d.textContent = baseHelp + maxText;
   }
 
   // ③ 仲良くなりたい子
@@ -4836,8 +4896,11 @@ function renderStudentSurvey(){
     const d = document.getElementById('d_friendWant');
     if(h) h.textContent = q.want.label || getDefaultText('want','label');
     const maxWant = q.want.max ? parseInt(q.want.max) : null;
-    const helpWant = q.want.help || getDefaultText('want','help');
-    if(d) d.textContent = helpWant + (maxWant ? `（さいだい${maxWant}人まで）` : '');
+    const baseHelp = q.want.help || getDefaultText('want','help');
+    const maxText = maxWant
+      ? (getSurveyTextMode()==='kanji' ? `（最大${maxWant}人まで）` : `（さいだい${maxWant}にん まで）`)
+      : (getSurveyTextMode()==='kanji' ? '（複数選択可）' : '（いくつでも えらべます）');
+    if(d) d.textContent = baseHelp + maxText;
   }
 
   // ④ ちかくではないほうがいい子
@@ -4848,9 +4911,12 @@ function renderStudentSurvey(){
     const d = document.getElementById('d_friendAvoid');
     if(h) h.textContent = q.avoid.label || getDefaultText('avoid','label');
     const maxAvoid = q.avoid.max ? parseInt(q.avoid.max) : null;
-    const helpAvoid = q.avoid.help || getDefaultText('avoid','help');
+    const baseHelp = q.avoid.help || getDefaultText('avoid','help');
+    const maxText = maxAvoid
+      ? (getSurveyTextMode()==='kanji' ? `（最大${maxAvoid}人まで）` : `（さいだい${maxAvoid}にん まで）`)
+      : (getSurveyTextMode()==='kanji' ? '（複数選択可）' : '（いくつでも えらべます）');
     if(d) d.innerHTML =
-      escapeHtml(helpAvoid + (maxAvoid ? `（さいだい${maxAvoid}人まで）` : '')) +
+      escapeHtml(baseHelp + maxText) +
       '<br><span style="color:var(--danger);font-size:12px;font-weight:700;">⚠️ クラスのみんなが なかよく すごせることが たいせつです。とくに きになる こが いない ばあいは えらばないように しましょう。</span>';
   }
 
