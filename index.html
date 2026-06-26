@@ -1116,6 +1116,24 @@
           <div class="pair-list" id="disciplineList"></div>
         </div>
 
+        <h2>先生の人間関係メモ</h2>
+        <div class="card">
+          <div class="help" style="margin-top:0;">アンケートがなくても先生の主観で入力できます。AI生成時の参考にはなりませんが、座席チェックパネルに表示されます。</div>
+          <div class="pair-form" style="flex-wrap:wrap;gap:6px;align-items:flex-end;">
+            <select id="trType" style="width:130px;">
+              <option value="good">🟢 なかよし</option>
+              <option value="separate">🔴 離した方がよい</option>
+              <option value="note">📝 個別メモ</option>
+            </select>
+            <select id="trStudentA" style="flex:1;min-width:110px;"></select>
+            <select id="trStudentB" style="flex:1;min-width:110px;" id="trStudentB"></select>
+            <input type="text" id="trNote" placeholder="理由・メモ（任意）" style="flex:2;min-width:150px;">
+            <button class="btn-add" onclick="addTeacherRelation()">追加</button>
+          </div>
+          <div id="trStudentBWrap" style="display:none;"></div>
+          <div class="pair-list" id="teacherRelationList" style="margin-top:8px;"></div>
+        </div>
+
         <h2>その他の条件</h2>
         <div class="card">
           <div class="check-row">
@@ -1396,6 +1414,11 @@
             <span><span class="swatch" style="background:#e9d6b3;"></span>指定なし</span>
           </div>
           <div class="floor-note">※ 実際の教室の向き（窓側・廊下側など）に合わせて読み替えてください。</div>
+
+          <h2>📋 座席チェック</h2>
+          <div class="card" id="seatCheckPanel">
+            <div class="help" style="margin:0;color:var(--text-sub);">座席を確定・変更すると自動的に更新されます。</div>
+          </div>
 
           <h2>AIとチャットで相談する</h2>
           <div class="card">
@@ -1689,7 +1712,8 @@ function defaultState(){
     surveySettings: defaultSurveySettings(),
     surveyResults: [],
     slots: [null, null, null, null, null],  // 5つの保存スロット
-    seatHistory: [],  // 席替え履歴（最大5件）
+    seatHistory: [],
+    teacherRelations: [], // 先生の人間関係メモ [{id,type,studentIds,note}]
   };
 }
 let state = defaultState();
@@ -2299,18 +2323,21 @@ function switchMode(mode){
   const teacherArea = document.getElementById('teacherArea');
   const studentArea = document.getElementById('studentArea');
   const boardSub = document.getElementById('boardSub');
+  const saveBtn = document.getElementById('manualSaveBtn');
   if(mode==='teacher'){
     teacherBtn.classList.add('active');
     studentBtn.classList.remove('active');
     teacherArea.hidden = false;
     studentArea.hidden = true;
     boardSub.textContent = currentTeacher ? ('ようこそ、' + currentTeacher.displayName + ' 先生') : '';
+    if(saveBtn) saveBtn.style.display = 'inline-block';
   }else{
     teacherBtn.classList.remove('active');
     studentBtn.classList.add('active');
     teacherArea.hidden = true;
     studentArea.hidden = false;
     boardSub.textContent = 'せきについての きぼうを せんせいに つたえましょう（プレビュー）';
+    if(saveBtn) saveBtn.style.display = 'none'; // 児童画面では非表示
     const helpEl = document.getElementById('surveySubmitHelp');
     if(helpEl) helpEl.textContent = 'これは先生によるプレビューです。実際の回答は「児童アンケート用リンク」から行ってください。';
     renderStudentSurvey();
@@ -4350,23 +4377,49 @@ function printSeatHistory(idx){
   const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">
 <title>${clsLabel} 座席表</title>
 <style>
-  @page{ size:A4 landscape; margin:12mm; }
+  @page{ size:A4 landscape; margin:8mm; }
   *{ box-sizing:border-box; }
-  body{ font-family:"Hiragino Sans","Yu Gothic",sans-serif; margin:0; padding:16px; color:#222; }
-  .head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:14px; border-bottom:2px solid #333; padding-bottom:8px; }
-  .head h1{ font-size:22px; font-weight:800; margin:0; }
-  .date-area{ display:flex; align-items:center; gap:8px; }
-  .date-area label{ font-size:13px; color:#555; }
-  .date-area input{ font-size:15px; border:1px solid #aaa; border-radius:4px; padding:4px 8px; width:180px; font-family:inherit; }
-  @media print{ .date-area input{ border:none; font-size:15px; } .printbtn{ display:none; } .no-print{ display:none; } }
-  .blackboard{ background:#222; color:#fff; text-align:center; padding:8px; border-radius:6px; font-size:16px; font-weight:800; letter-spacing:.2em; margin-top:12px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-  .grid{ display:grid; grid-template-columns:repeat(${cols},1fr); gap:6px; }
-  .seat{ border:1.5px solid #555; border-radius:8px; min-height:60px; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:600; text-align:center; padding:4px; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  html{ width:277mm; height:190mm; }
+  body{ margin:0; padding:5mm; font-family:"Hiragino Sans","Yu Gothic",sans-serif; color:#222;
+        width:277mm; height:190mm; overflow:hidden; }
+  .head{ display:flex; align-items:center; justify-content:space-between;
+         border-bottom:1.5px solid #333; padding-bottom:2mm; margin-bottom:3mm; height:11mm; }
+  .head h1{ font-size:15pt; font-weight:800; margin:0; white-space:nowrap; }
+  .date-area{ display:flex; align-items:center; gap:3mm; }
+  .date-area label{ font-size:9pt; color:#555; white-space:nowrap; }
+  .date-area input{ font-size:10pt; border:1px solid #aaa; border-radius:3px; padding:1.5mm 3mm; width:40mm; font-family:inherit; }
+  @media print{ .date-area input{ border:none; } .printbtn{ display:none; } .no-print{ display:none; } }
+  .blackboard{ background:#222; color:#fff; text-align:center; padding:2mm;
+               border-radius:3px; font-size:11pt; font-weight:800; letter-spacing:.2em;
+               margin-top:2mm; height:8mm; display:flex; align-items:center; justify-content:center;
+               -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(${cols},1fr);
+    gap:1.5mm;
+    /* A4横(190mm) - body padding(5mm×2) - ヘッダー(11mm) - 区切り下余白(3mm) - 黒板(8mm+2mm) = 155mm */
+    height:155mm;
+  }
+  .seat{
+    border:1px solid #888;
+    border-radius:3px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:700;
+    text-align:center;
+    padding:1mm;
+    overflow:hidden;
+    word-break:break-all;
+    font-size:${Math.max(7, Math.min(12, Math.floor(240/Math.max(cols,1)/Math.max((entry.grid||{}).rows||5,1)*10)/10))}pt;
+    -webkit-print-color-adjust:exact;
+    print-color-adjust:exact;
+  }
   .seat.male{ background:#dcecf9; }
   .seat.female{ background:#fbe2e7; }
   .seat.any{ background:#f4ecd9; }
-  .seat.disabled{ background:#e8e8e8; border-style:dashed; }
-  .printbtn{ display:block; margin:16px auto 0; padding:10px 28px; font-size:15px; background:#2d5a3d; color:#fff; border:none; border-radius:8px; cursor:pointer; font-weight:700; }
+  .seat.disabled{ background:#e8e8e8; border-style:dashed; color:#bbb; font-size:7pt; }
+  .printbtn{ display:block; margin:6mm auto 0; padding:4mm 14mm; font-size:11pt; background:#2d5a3d; color:#fff; border:none; border-radius:6px; cursor:pointer; font-weight:700; }
 </style></head>
 <body>
   <div class="head">
@@ -4409,6 +4462,173 @@ async function deleteSeatHistory(idx){
   if(state.seatHistory) state.seatHistory.splice(idx, 1);
   renderSeatHistory();
   saveState();
+}
+
+/* ====================== 先生の人間関係メモ ====================== */
+
+function renderTeacherRelations(){
+  const list = document.getElementById('teacherRelationList');
+  if(!list) return;
+  const rels = state.teacherRelations || [];
+  const typeLabel = {good:'🟢 なかよし', separate:'🔴 離した方がよい', note:'📝 個別メモ'};
+  ['trStudentA','trStudentB'].forEach(id=>{
+    const sel = document.getElementById(id);
+    if(!sel) return;
+    const cur = sel.value;
+    const sorted = [...state.students].sort((a,b)=>(a.number||0)-(b.number||0));
+    sel.innerHTML = '<option value="">── 選択 ──</option>' +
+      sorted.map(s=>`<option value="${s.id}">${s.number?s.number+'. ':''}${escapeHtml(s.name||s.yomi)}</option>`).join('');
+    if(cur) sel.value = cur;
+  });
+  if(rels.length===0){
+    list.innerHTML='<div class="help" style="margin:0;">まだ登録されていません。</div>';
+    return;
+  }
+  list.innerHTML = rels.map(r=>{
+    const sNames=(r.studentIds||[]).map(id=>{const s=studentById(id);return s?escapeHtml(s.name||s.yomi):id;}).join(' ／ ');
+    return `<div class="list-row" style="flex-wrap:wrap;gap:4px;align-items:center;">
+      <span style="font-size:12px;font-weight:700;min-width:130px;">${escapeHtml(typeLabel[r.type]||r.type)}</span>
+      <span style="flex:1;font-size:13px;">${sNames}${r.note?' — <span style="color:var(--text-sub);">'+escapeHtml(r.note)+'</span>':''}</span>
+      <button class="btn-x" onclick="removeTeacherRelation('${r.id}')">×</button>
+    </div>`;
+  }).join('');
+}
+
+function addTeacherRelation(){
+  const type = document.getElementById('trType')?.value||'note';
+  const sidA = document.getElementById('trStudentA')?.value||'';
+  const sidB = document.getElementById('trStudentB')?.value||'';
+  const note = (document.getElementById('trNote')?.value||'').trim();
+  const studentIds=[sidA,sidB].filter(Boolean);
+  if(studentIds.length===0){showToast('児童を1人以上選んでください','error');return;}
+  if(type!=='note'&&studentIds.length<2){showToast('2人選んでください','error');return;}
+  if(!state.teacherRelations) state.teacherRelations=[];
+  state.teacherRelations.push({
+    id:'tr_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
+    type,studentIds,note
+  });
+  if(document.getElementById('trNote')) document.getElementById('trNote').value='';
+  renderTeacherRelations();
+  renderSeatAnalysis();
+  saveState();
+  showToast('追加しました','ok');
+}
+
+function removeTeacherRelation(id){
+  if(!state.teacherRelations) return;
+  state.teacherRelations=state.teacherRelations.filter(r=>r.id!==id);
+  renderTeacherRelations();
+  renderSeatAnalysis();
+  saveState();
+}
+
+/* ====================== 座席チェックパネル ====================== */
+
+function seatDistance(idxA,idxB){
+  const cols=state.grid.cols||6;
+  const rA=Math.floor(idxA/cols),cA=idxA%cols,rB=Math.floor(idxB/cols),cB=idxB%cols;
+  return Math.abs(rA-rB)+Math.abs(cA-cB);
+}
+
+function renderSeatAnalysis(){
+  const panel=document.getElementById('seatCheckPanel');
+  if(!panel) return;
+  if(!state.currentSeating||state.currentSeating.filter(Boolean).length===0){
+    panel.innerHTML='<div class="help" style="margin:0;color:var(--text-sub);">座席を確定すると自動的に確認されます。</div>';
+    return;
+  }
+  const cols=state.grid.cols||6;
+  const issues=[],warnings=[],infos=[];
+  const seatOf={};
+  state.currentSeating.forEach((sid,idx)=>{if(sid)seatOf[sid]=idx;});
+  const sName=id=>{const s=studentById(id);return s?s.name||s.yomi:'?';};
+  const rowLabel=idx=>`${Math.floor(idx/cols)+1}行${idx%cols+1}列`;
+
+  // ① 離したい条件違反
+  (state.constraints.separate||[]).forEach(([a,b])=>{
+    const ia=seatOf[a],ib=seatOf[b];
+    if(ia==null||ib==null) return;
+    const d=seatDistance(ia,ib);
+    if(d<=2) issues.push(`🔴 【条件違反・離す】${sName(a)}（${rowLabel(ia)}）と${sName(b)}（${rowLabel(ib)}）が近い（距離${d}マス）`);
+  });
+
+  // ② 近づけたい条件
+  (state.constraints.together||[]).forEach(([a,b])=>{
+    const ia=seatOf[a],ib=seatOf[b];
+    if(ia==null||ib==null) return;
+    const d=seatDistance(ia,ib);
+    if(d>2) warnings.push(`🟡 【条件・近づける】${sName(a)}と${sName(b)}が離れている（距離${d}マス）`);
+  });
+
+  // ③ 視力配慮
+  (state.constraints.visionRestrictions||[]).forEach(r=>{
+    const idx=seatOf[r.studentId];
+    if(idx==null) return;
+    const row=Math.floor(idx/cols)+1;
+    if(row>r.maxRow) issues.push(`🔴 【配慮違反】${sName(r.studentId)}（${rowLabel(idx)}）が前から${r.maxRow}列以内に入っていません`);
+  });
+
+  // ④ アンケート：避けたい相手が近い
+  (state.surveyResults||[]).forEach(res=>{
+    const myIdx=seatOf[res.studentId];
+    if(myIdx==null) return;
+    (res.friendsAvoid||[]).forEach(avoidId=>{
+      const aIdx=seatOf[avoidId];
+      if(aIdx==null) return;
+      const d=seatDistance(myIdx,aIdx);
+      if(d<=2) warnings.push(`🟡 【アンケート・避ける】${sName(res.studentId)}が避けたい${sName(avoidId)}と近い（${rowLabel(myIdx)}↔${rowLabel(aIdx)}、距離${d}マス）`);
+    });
+  });
+
+  // ⑤ アンケート：希望列と違う（rowCircle）
+  (state.surveyResults||[]).forEach(res=>{
+    if(!res.seatPref||res.seatPref.mode!=='rowCircle') return;
+    const myIdx=seatOf[res.studentId];
+    if(myIdx==null) return;
+    const myRow=Math.floor(myIdx/cols);
+    const choices=res.seatPref.rowChoices||[];
+    if(choices[myRow]===undefined) return;
+    if(choices[myRow]!==myIdx){
+      const wantCol=(choices[myRow]%cols)+1;
+      infos.push(`🔵 【アンケート希望】${sName(res.studentId)}（${rowLabel(myIdx)}）は${myRow+1}行${wantCol}列を希望`);
+    }
+  });
+
+  // ⑥ 先生メモ
+  (state.teacherRelations||[]).forEach(r=>{
+    if(r.type==='separate'){
+      const [a,b]=[r.studentIds[0],r.studentIds[1]];
+      if(!a||!b) return;
+      const ia=seatOf[a],ib=seatOf[b];
+      if(ia==null||ib==null) return;
+      const d=seatDistance(ia,ib);
+      if(d<=2) warnings.push(`🟡 【先生メモ・要離す】${sName(a)}と${sName(b)}が近い（距離${d}マス）${r.note?' — '+r.note:''}`);
+    }else if(r.type==='good'){
+      const [a,b]=[r.studentIds[0],r.studentIds[1]];
+      if(!a||!b) return;
+      const ia=seatOf[a],ib=seatOf[b];
+      if(ia==null||ib==null) return;
+      const d=seatDistance(ia,ib);
+      if(d<=2) infos.push(`🟢 【先生メモ・なかよし】${sName(a)}と${sName(b)}が近い（距離${d}マス）${r.note?' — '+r.note:''}`);
+      else     warnings.push(`🟡 【先生メモ・なかよし】${sName(a)}と${sName(b)}が離れている（距離${d}マス）${r.note?' — '+r.note:''}`);
+    }else if(r.type==='note'){
+      const sids=(r.studentIds||[]).map(sName).join('・');
+      infos.push(`📝 【先生メモ】${sids}${r.note?' — '+r.note:''}`);
+    }
+  });
+
+  if(!issues.length&&!warnings.length&&!infos.length){
+    panel.innerHTML='<div style="color:var(--ok);font-size:13px;font-weight:700;">✅ 特に問題は見つかりませんでした。</div>';
+    return;
+  }
+  const all=[...issues,...warnings,...infos];
+  panel.innerHTML='<div style="font-size:11px;color:var(--text-sub);margin-bottom:6px;">'+
+    (issues.length?`🔴 条件違反 ${issues.length}件　`:'')+(warnings.length?`🟡 注意 ${warnings.length}件　`:'')+(infos.length?`🔵 情報 ${infos.length}件`:'')+'</div>'+
+    all.map(t=>{
+      const c=t.startsWith('🔴')?'#fbe8e8':t.startsWith('🟡')?'#fff8e1':t.startsWith('🟢')?'#e8f4ed':'#e8f0fb';
+      const b=t.startsWith('🔴')?'#e74c3c':t.startsWith('🟡')?'#f39c12':t.startsWith('🟢')?'#4a7c59':'#3b82f6';
+      return `<div style="font-size:12px;line-height:1.6;padding:5px 10px;margin-bottom:3px;background:${c};border-left:3px solid ${b};border-radius:0 6px 6px 0;">${escapeHtml(t)}</div>`;
+    }).join('');
 }
 
 /* ---------- 先生目線印刷 ---------- */
@@ -4613,6 +4833,9 @@ function renderResult(){
   }else{
     warningsEl.style.display = 'none';
   }
+
+  // 座席チェックパネルを更新
+  renderSeatAnalysis();
 }
 
 function startLongPress2(idx){ clearTimeout(longPressTimer2); longPressTimer2=setTimeout(()=>onSeatEditLongPress(idx),600); }
@@ -5359,7 +5582,9 @@ function buildSeatContext(){
 function addChatBubble(role, text){
   const log = document.getElementById('aiChatLog');
   const div = document.createElement('div');
-  div.className = 'chat-bubble ' + (role==='user' ? 'user' : 'ai');
+  div.style.cssText = role==='user'
+    ? 'align-self:flex-end;background:#4a7c59;color:#fff;padding:8px 12px;border-radius:12px 12px 2px 12px;max-width:85%;font-size:13px;line-height:1.5;white-space:pre-wrap;'
+    : 'align-self:flex-start;background:#f0ece6;color:#3d3529;padding:8px 12px;border-radius:12px 12px 12px 2px;max-width:90%;font-size:13px;line-height:1.6;white-space:pre-wrap;';
   div.textContent = text;
   log.appendChild(div);
   log.scrollTop = log.scrollHeight;
@@ -5367,7 +5592,6 @@ function addChatBubble(role, text){
 }
 
 function parseSwapProposals(text){
-  // 「【交換提案】Aさん（○行○列）↔ Bさん（○行○列）」形式を検出
   const proposals = [];
   const re = /【交換提案】([^\（]+)（([^）]+)）\s*↔\s*([^\（]+)（([^）]+)）/g;
   let m;
@@ -5392,15 +5616,28 @@ function renderSwapProposals(proposals){
   const area = document.getElementById('aiChatSwapArea');
   if(!proposals || proposals.length===0){ area.hidden=true; return; }
   area.hidden = false;
-  area.innerHTML = '<div style="font-size:13px;font-weight:700;margin-bottom:6px;color:var(--chalk-green);">AIの交換提案をワンタップで反映できます：</div>' +
+  area.innerHTML = '<div style="font-size:13px;font-weight:700;margin-bottom:6px;color:var(--chalk-green);">💡 交換提案があります：</div>' +
     proposals.map((p,i)=>`
-      <div class="list-row" style="margin-bottom:4px;">
+      <div class="list-row" style="margin-bottom:4px;flex-wrap:wrap;gap:4px;">
         <span style="flex:1;font-size:13px;">${escapeHtml(p.nameA)}（${escapeHtml(p.posA)}）↔ ${escapeHtml(p.nameB)}（${escapeHtml(p.posB)}）</span>
-        <button class="btn-secondary" style="font-size:12px;" onclick="applySwap(${i})">入れ替える</button>
+        <button class="btn-secondary" style="font-size:12px;background:#e8f4ed;" onclick="confirmSwap(${i})">✅ 実行する</button>
       </div>
     `).join('');
-  // 提案データを一時保存
   area._proposals = proposals;
+}
+
+async function confirmSwap(i){
+  const area = document.getElementById('aiChatSwapArea');
+  const proposals = area._proposals;
+  if(!proposals || !proposals[i]) return;
+  const p = proposals[i];
+  // ワンクッション確認
+  const ok = await dlgConfirm(
+    `「${p.nameA}」と「${p.nameB}」の席を入れ替えますか？\n\n${p.nameA}：${p.posA}\n${p.nameB}：${p.posB}`,
+    '入れ替える'
+  );
+  if(!ok) return;
+  applySwap(i);
 }
 
 function applySwap(i){
@@ -5420,16 +5657,18 @@ function applySwap(i){
   state.currentSeating[idxB] = tmp;
   renderResult();
   saveState();
-  // チャットに反映ログを追加
-  addChatBubble('user', `${p.nameA}と${p.nameB}の席を入れ替えました。`);
+  addChatBubble('assistant', `✅ ${p.nameA}さんと${p.nameB}さんの席を入れ替えました。`);
+  // 実行済みボタンを無効化
+  const btns = area.querySelectorAll('button');
+  btns.forEach(b=>{ b.disabled=true; b.textContent='実行済み'; b.style.opacity='0.5'; });
 }
 
 async function sendAIChat(){
   const input = document.getElementById('aiChatInput');
   const prompt = (input.value||'').trim();
   if(!prompt) return;
-  if(!state.currentSeating){
-    addChatBubble('ai', '先に座席案を「この案に決定する」で選んでください。');
+  if(!state.currentSeating || state.currentSeating.filter(Boolean).length===0){
+    addChatBubble('assistant', '先に座席案を「この案に決定する」で選んでください。');
     return;
   }
 
@@ -5437,30 +5676,45 @@ async function sendAIChat(){
   addChatBubble('user', prompt);
   aiChatHistory.push({role:'user', content: prompt});
 
-  const thinkingEl = addChatBubble('ai', 'AIが考えています…');
-  thinkingEl.className = 'chat-bubble ai-thinking';
+  // thinking表示
+  const thinkingEl = document.createElement('div');
+  thinkingEl.style.cssText = 'align-self:flex-start;background:#f0ece6;color:#888;padding:8px 12px;border-radius:12px;font-size:13px;';
+  thinkingEl.textContent = '💭 考えています…';
+  document.getElementById('aiChatLog').appendChild(thinkingEl);
+  document.getElementById('aiChatLog').scrollTop = document.getElementById('aiChatLog').scrollHeight;
 
-  // 最初のターンはコンテキスト付き、以降は会話履歴だけ送る
-  const systemContext = buildSeatContext();
-  const messages = aiChatHistory.map(m=>({role:m.role, content:m.content}));
+  // 送信ボタンを無効化
+  const sendBtn = document.querySelector('button[onclick="sendAIChat()"]');
+  if(sendBtn) sendBtn.disabled = true;
 
-  const res = await callApi('aiConsult', {
-    token: authToken,
-    context: systemContext,
-    prompt: prompt,
-    chatHistory: aiChatHistory.slice(-8) // 直近8件のみ送信
-  });
+  try{
+    // GAS経由でGemini APIを呼ぶ
+    const systemContext = buildSeatContext();
+    const res = await callApi('aiConsult', {
+      token: authToken,
+      context: systemContext,
+      prompt: prompt,
+      chatHistory: aiChatHistory.slice(-8) // 直近8件のみ送信
+    });
 
-  thinkingEl.remove();
+    thinkingEl.remove();
 
-  if(res.success){
-    addChatBubble('ai', res.text);
-    aiChatHistory.push({role:'assistant', content: res.text});
-    // 交換提案を検出
-    const proposals = parseSwapProposals(res.text);
-    renderSwapProposals(proposals);
-  }else{
-    addChatBubble('ai', 'エラー: ' + (res.message||'通信に失敗しました'));
+    if(res.success){
+      const text = res.text || '';
+      addChatBubble('assistant', text);
+      aiChatHistory.push({role:'assistant', content: text});
+      const proposals = parseSwapProposals(text);
+      renderSwapProposals(proposals);
+    } else {
+      const msg = res.message || '通信に失敗しました';
+      addChatBubble('assistant', '⚠️ ' + msg +
+        (msg.includes('APIキー') ? '\n\n管理者画面でGemini APIキーを設定してください。' : ''));
+    }
+  } catch(e) {
+    thinkingEl.remove();
+    addChatBubble('assistant', '⚠️ エラー: ' + e.message);
+  } finally {
+    if(sendBtn) sendBtn.disabled = false;
   }
 }
 
@@ -5640,6 +5894,7 @@ function renderAll(){
     document.getElementById('finalSection').hidden = true;
   }
   renderSeatHistory();
+  renderTeacherRelations(); // 先生メモは座席有無に関わらず表示
 }
 
 document.addEventListener('DOMContentLoaded', init);
