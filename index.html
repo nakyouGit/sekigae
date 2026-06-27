@@ -528,6 +528,15 @@
   }
   .survey-q-body.open{display:block;}
   .survey-q-body input[type=text]{width:100%;margin-top:4px;}
+  /* ── アンケート結果ミニグリッド ── */
+  .mg-wrap{ display:grid; gap:1.5px; width:72px; }
+  .mg-cell{ height:7px; background:#ede8e0; border-radius:1px; }
+  .mg-row  { background:#87b09a; }
+  .mg-exact{ background:#2d6a3f; }
+  .mg-rank1{ background:#2d6a3f; }
+  .mg-rank2{ background:#5a9a78; }
+  .mg-rank3{ background:#87b09a; }
+
   .survey-table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px;}
   .survey-table th{
     background:var(--chalk-green);
@@ -931,7 +940,8 @@
         <h2>児童アンケート用リンク</h2>
         <div class="card">
           <div class="help" style="margin-top:0;">このリンクはいつも同じです。児童に配る前に「名簿を保存」を押してください。名簿や座席の設定を変えたら、もう一度「名簿を保存」を押せば最新の内容が反映されます。</div>
-          <button class="btn-primary" style="width:100%;margin-bottom:10px;" onclick="generateSurveyLink()">💾 名簿を保存してリンクを用意</button>
+          <button class="btn-primary" style="width:100%;margin-bottom:10px;" onclick="copySurveyLink()">📋 アンケートリンクをコピー</button>
+          <div class="help" style="margin:0 0 6px;font-size:11px;">名簿を変更したら「変更を保存」を押すと自動でGASに保存されます。リンクはいつも同じです。</div>
           <div class="copy-row">
             <input type="text" id="surveyLinkInput" readonly placeholder="上のボタンを押すとリンクが生成されます">
             <button class="btn-secondary" onclick="copySurveyLink()">コピー</button>
@@ -989,11 +999,12 @@
           <button class="btn-add" style="width:100%;margin-top:6px;" onclick="parseRosterPaste()">📋 貼り付けた名簿を読み込む</button>
           <div id="pastePreview" style="margin-top:8px;"></div>
 
-          <div style="display:flex;align-items:center;gap:8px;margin:14px 0 6px;color:#9a8f7d;font-size:12px;"><hr style="flex:1;border:none;border-top:1px solid var(--neutral);">または1人ずつ手入力<hr style="flex:1;border:none;border-top:1px solid var(--neutral);"></div>
+          <div style="display:flex;align-items:center;gap:8px;margin:14px 0 4px;color:#9a8f7d;font-size:12px;"><hr style="flex:1;border:none;border-top:1px solid var(--neutral);">または1人ずつ手入力<hr style="flex:1;border:none;border-top:1px solid var(--neutral);"></div>
+          <div class="help" style="margin:0 0 6px;font-size:11px;">名前は省略可。番号だけでも登録できます（セキュリティ上、名前を使わない場合）。</div>
           <div style="display:grid;grid-template-columns:44px 1fr 1fr auto auto;gap:5px;align-items:center;margin-bottom:10px;">
             <input type="number" id="newStudentNumber" placeholder="番" min="1" max="99" style="width:100%;padding:8px 4px;text-align:center;">
-            <input type="text" id="newStudentName" placeholder="名前（漢字）">
-            <input type="text" id="newStudentYomi" placeholder="なまえ（よみ）">
+            <input type="text" id="newStudentName" placeholder="名前（省略可）">
+            <input type="text" id="newStudentYomi" placeholder="よみ（省略可）">
             <select id="newStudentGender">
               <option value="none">指定なし</option>
               <option value="male">男子</option>
@@ -1328,7 +1339,8 @@
             <button class="btn-primary" style="flex:1;" onclick="generateCandidates()">🎲 AIで3案を自動生成</button>
             <button class="btn-secondary" style="flex:1;" onclick="startManualMode()">✋ 先生が手動で作成</button>
           </div>
-          <div class="help">「AIで3案を自動生成」→ 条件を踏まえた案を3つ提示します。<br>「先生が手動で作成」→ 名簿から児童を席にドラッグ＆ドロップで自由に配置できます。</div>
+          <div class="help">「AIで3案を自動生成」→ 条件とアンケートを踏まえた案を3つ提示します。<br>「先生が手動で作成」→ 名簿から児童を席にドラッグ＆ドロップで自由に配置できます。</div>
+          <div id="surveyReadyBadge" style="display:none;margin:4px 0 2px;font-size:12px;color:var(--chalk-green);font-weight:700;"></div>
           <div id="candidatesList"></div>
         </div>
 
@@ -1433,7 +1445,7 @@
 
           <h2>席替え履歴</h2>
           <div class="card">
-            <div class="help" style="margin-top:0;">「📌 席替え確定」を押すと自動で保存されます。過去5回分の座席表を確認・復元できます。</div>
+            <div class="help" style="margin-top:0;">「📌 席替え確定」を押すと自動で保存されます。過去10回分の座席表を確認・復元・PDF印刷できます。</div>
             <div id="seatHistoryList"></div>
           </div>
         </div>
@@ -1909,11 +1921,18 @@ function uid(){ return 's' + Date.now().toString(36) + Math.random().toString(36
 function studentById(id){ return state.students.find(s=>s.id===id); }
 
 // 座席表用の名前（漢字/よみ）
+// 番号のみの場合の表示名を返すヘルパー
+function numberOnlyLabel(s){
+  return s.number ? s.number + '番' : '?';
+}
+
 function seatDisplayName(s){
   if(!s) return '?';
   const mode = (state.surveySettings && state.surveySettings.seatNameMode) || 'kanji';
   if(mode==='yomi' && s.yomi) return s.yomi;
-  return s.name || s.yomi || '?';
+  if(s.name) return s.name;
+  if(s.yomi) return s.yomi;
+  return numberOnlyLabel(s); // 名前なし→番号
 }
 
 // アンケート用の名前（漢字/よみ）
@@ -1921,15 +1940,18 @@ function surveyDisplayName(s){
   if(!s) return '?';
   const mode = (state.surveySettings && state.surveySettings.surveyNameMode) || 'yomi';
   if(mode==='yomi' && s.yomi) return s.yomi;
-  return s.name || s.yomi || '?';
+  if(s.name) return s.name;
+  if(s.yomi) return s.yomi;
+  return numberOnlyLabel(s); // 名前なし→番号
 }
 
 // 先生管理画面用のフルネーム表示（番号＋漢字＋よみ）
 function adminDisplayName(s){
   if(!s) return '?';
   const num = s.number ? (s.number + '. ') : '';
-  const yomi = s.yomi ? (' (' + s.yomi + ')') : '';
-  return num + (s.name || '') + yomi;
+  const nameStr = s.name || s.yomi || ('(' + (s.number||'?') + '番)');
+  const yomi = (s.yomi && s.yomi !== s.name) ? (' (' + s.yomi + ')') : '';
+  return num + nameStr + yomi;
 }
 
 function seatLabel(idx, cols){
@@ -2374,6 +2396,10 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
     if(btn.dataset.tab==='survey'){
       updateSurveyPlaceholders();
     }
+    if(btn.dataset.tab==='result'){
+      // 座席表タブに切り替えたとき、アンケート結果を自動取得
+      autoFetchSurveyResults();
+    }
     if(btn.dataset.tab==='admin'){
       if(adminPinVerified){
         document.getElementById('adminPinGate').hidden = true;
@@ -2387,6 +2413,28 @@ document.querySelectorAll('.tab-btn').forEach(btn=>{
     }
   });
 });
+
+// 座席表タブ表示時にアンケート結果を自動取得（前回から変化があれば）
+let _lastSurveyFetch = 0;
+async function autoFetchSurveyResults(){
+  if(!authToken) return;
+  const now = Date.now();
+  // 30秒以内に取得済みならスキップ
+  if(now - _lastSurveyFetch < 30000) return;
+  _lastSurveyFetch = now;
+  try{
+    const res = await callApi('getSurveyResponses', {token: authToken});
+    if(res && res.success && Array.isArray(res.results) && res.results.length > 0){
+      const prev = (state.surveyResults||[]).length;
+      state.surveyResults = res.results;
+      renderSurveyResults();
+      renderSeatAnalysis();
+      if(res.results.length !== prev){
+        showToast(`アンケート ${res.results.length}件 取得`, 'ok', 2000);
+      }
+    }
+  }catch(e){ /* サイレントに失敗 */ }
+}
 
 /* ---------- grid size ---------- */
 const rowsInput = document.getElementById('rowsInput');
@@ -2516,12 +2564,12 @@ function parseRosterText(text){
       else if(/女/.test(g)) gender='female';
     }
 
-    if(!name && !yomi) continue;
+    if(!name && !yomi && !number) continue;  // 番号だけでも登録可
     imported.push({
       id: uid(),
       number,
-      name: name || yomi,
-      yomi: yomi || name,
+      name: name || yomi || '',   // 名前なしは空文字
+      yomi: yomi || name || '',
       gender
     });
   }
@@ -2605,9 +2653,19 @@ function addStudent(){
   const name = nameInput.value.trim();
   const yomi = yomiInput ? yomiInput.value.trim() : '';
   const number = numInput ? (parseInt(numInput.value)||'') : '';
-  if(!name && !yomi){ alert('名前（漢字）かなまえ（よみ）を入力してください。'); return; }
+  // 番号だけでも登録可能（名前・よみは任意）
+  if(!name && !yomi && !number){
+    alert('出席番号か名前を入力してください。');
+    return;
+  }
   const gender = document.getElementById('newStudentGender').value;
-  state.students.push({id:uid(), number, name: name||yomi, yomi: yomi||name, gender});
+  state.students.push({
+    id: uid(),
+    number,
+    name: name || yomi || '',   // 名前なしは空文字
+    yomi: yomi || name || '',   // よみなしも空文字
+    gender
+  });
   nameInput.value=''; yomiInput.value=''; if(numInput) numInput.value='';
   nameInput.focus();
   renderAll();
@@ -2642,13 +2700,16 @@ function renderRoster(){
     return;
   }
   const sorted = [...state.students].sort((a,b)=>(a.number||0)-(b.number||0));
-  list.innerHTML = sorted.map(s=>`
+  list.innerHTML = sorted.map(s=>{
+    const displayName = s.name || s.yomi || (s.number ? `(${s.number}番)` : '（名前なし）');
+    const yomiSub = s.yomi && s.yomi !== s.name && s.name ? `<br><span style="font-size:11px;font-weight:400;color:#7a7264;">${escapeHtml(s.yomi)}</span>` : '';
+    return `
     <div class="roster-item ${s.gender}">
       ${s.number ? `<span style="font-size:12px;color:#9a8f7d;min-width:24px;">${escapeHtml(String(s.number))}.</span>` : ''}
-      <span class="name">${escapeHtml(s.name||'')}${s.yomi&&s.yomi!==s.name?'<br><span style="font-size:11px;font-weight:400;color:#7a7264;">'+escapeHtml(s.yomi)+'</span>':''}</span>
+      <span class="name">${escapeHtml(displayName)}${yomiSub}</span>
       <button class="btn-x" onclick="removeStudent('${s.id}')">×</button>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
   renderTemplateGenderCount();
 }
 
@@ -3448,62 +3509,110 @@ function formatSeatPref(seatPref){
   return 'なし';
 }
 
+/* ── アンケート結果：ミニグリッド生成 ─────────────────────── */
+function buildMiniGrid(seatPref, rows, cols){
+  if(!seatPref || seatPref.mode==='none') return '';
+  const cells = [];
+  for(let r=0; r<rows; r++){
+    for(let c=0; c<cols; c++){
+      const idx = r*cols+c;
+      let cls='mg-cell';
+      if(seatPref.mode==='rowCircle' && seatPref.rowChoices){
+        const rowHas = seatPref.rowChoices[r] !== undefined;
+        const isExact = seatPref.rowChoices[r] === idx;
+        if(isExact) cls='mg-cell mg-exact';
+        else if(rowHas) cls='mg-cell mg-row';
+      } else if(seatPref.mode==='top3' && seatPref.ranked){
+        const rank = seatPref.ranked.indexOf(idx);
+        if(rank===0) cls='mg-cell mg-rank1';
+        else if(rank===1) cls='mg-cell mg-rank2';
+        else if(rank===2) cls='mg-cell mg-rank3';
+      }
+      cells.push(`<div class="${cls}"></div>`);
+    }
+  }
+  return `<div class="mg-wrap" style="grid-template-columns:repeat(${cols},1fr);">${cells.join('')}</div>`;
+}
+
 function renderSurveyResults(){
+  const badge = document.getElementById('surveyReadyBadge');
+  if(badge){
+    const cnt = (state.surveyResults||[]).length;
+    if(cnt > 0){
+      badge.style.display = 'block';
+      badge.textContent = `✅ アンケート ${cnt}件 取得済み — AI生成に反映されます`;
+    } else { badge.style.display = 'none'; }
+  }
+
   const el = document.getElementById('surveyResultsList');
+  if(!el) return;
   if(!state.surveyResults || state.surveyResults.length===0){
-    el.innerHTML = '<div class="empty-msg" style="padding:14px 0;">まだアンケート結果がありません。「結果を読み込む・更新する」を押してください。</div>';
+    el.innerHTML = '<div class="empty-msg" style="padding:14px 0;">まだアンケート結果がありません。</div>';
     return;
   }
 
-  const rows = state.surveyResults.map((r, idx)=>{
-    const nameTags = (ids, cls)=>(ids||[]).map(id=>{
-      const s = studentById(id);
-      return s ? `<span class="tag ${cls}">${escapeHtml(s.name||s.yomi||"?")}</span>` : '';
-    }).join('');
+  const rows = state.grid.rows||5, cols = state.grid.cols||6;
+  const now = Date.now();
+  const times = state.surveyResults.map(r=>r.submittedAt ? new Date(r.submittedAt).getTime() : 0);
+  const maxTime = Math.max(...times, now);
+  const minTime = Math.min(...times.filter(t=>t>0), maxTime);
+  const timeSpan = maxTime - minTime || 1;
 
-    const goodTags  = nameTags(r.friendsGood  || r.friends || [], 'tag-good');
-    const wantTags  = nameTags(r.friendsWant  || [], 'tag-want');
-    const avoidTags = nameTags(r.friendsAvoid || [], 'tag-avoid');
+  const cards = state.surveyResults.map(r=>{
+    const s = state.students.find(st=>st.id===r.studentId);
+    const dispName = s ? (s.name||s.yomi||numberOnlyLabel(s)) : (r.studentName||'?');
+    const submittedMs = r.submittedAt ? new Date(r.submittedAt).getTime() : 0;
+    const ageRatio = submittedMs>0 ? (submittedMs-minTime)/timeSpan : 1;
+    const isNew = ageRatio >= 0.9;
+    const isOld = ageRatio < 0.3;
+    const submitted = r.submittedAt ? String(r.submittedAt).slice(0,10) : '';
 
-    const seatText = formatSeatPref(r.seatPref);
-    const seatHtml = seatText === 'なし' ? '<span style="color:#bcb3a3;">なし</span>'
-      : seatText.split(' / ').map(s=>`<span class="tag tag-seat">${escapeHtml(s)}</span>`).join('');
+    const weightLabel = isNew
+      ? `<span style="background:#e8f4ed;color:#2d6a3f;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">最新</span>`
+      : isOld
+      ? `<span style="background:#f5f5f0;color:#999;font-size:10px;padding:1px 5px;border-radius:4px;">以前</span>`
+      : `<span style="background:#fff3cd;color:#856404;font-size:10px;padding:1px 5px;border-radius:4px;">中間</span>`;
 
-    const prevText = r.wantPrevSeat ? '✅ 希望する' : '';
-    const msgText = r.message ? escapeHtml(r.message) : '';
-    const submitted = r.submittedAt ? String(r.submittedAt).replace('T',' ').slice(0,16) : '';
+    const hasSeatPref = r.seatPref && r.seatPref.mode && r.seatPref.mode!=='none';
+    const miniGrid = hasSeatPref ? buildMiniGrid(r.seatPref, rows, cols) : '';
 
-    return `<tr>
-      <td><strong>${escapeHtml(r.studentName||'')}</strong><br><span style="font-size:10.5px;color:#9a8f7d;">${submitted}</span></td>
-      <td>${seatHtml || '<span style="color:#bcb3a3;">なし</span>'}</td>
-      <td>${goodTags  || '<span style="color:#bcb3a3;">なし</span>'}</td>
-      <td>${wantTags  || '<span style="color:#bcb3a3;">なし</span>'}</td>
-      <td>${avoidTags || '<span style="color:#bcb3a3;">なし</span>'}</td>
-      <td>${prevText}</td>
-      <td>${msgText ? `<button class="survey-detail-toggle" onclick="toggleSurveyMsg(this)">表示</button><div class="survey-detail">${msgText}</div>` : '<span style="color:#bcb3a3;">なし</span>'}</td>
-    </tr>`;
+    const tag = (ids, color, icon)=>(ids||[]).map(id=>{
+      const st = studentById(id);
+      return st ? `<span style="display:inline-block;background:${color};color:#fff;font-size:11px;padding:2px 7px;border-radius:10px;margin:2px;">${icon} ${escapeHtml(st.name||st.yomi||numberOnlyLabel(st))}</span>` : '';
+    }).filter(Boolean).join('');
+
+    const goodTags  = tag(r.friendsGood||r.friends||[], '#2d6a3f', '🤝');
+    const wantTags  = tag(r.friendsWant||[], '#1a5276', '💙');
+    const avoidTags = tag(r.friendsAvoid||[], '#922b21', '⚠️');
+    const hasFriends = goodTags||wantTags||avoidTags;
+    const prevSeat = r.wantPrevSeat ? `<div style="font-size:11px;color:#856404;margin-top:4px;">📍 前の席を希望</div>` : '';
+    const msg = r.message ? `<div style="font-size:11px;color:var(--text-sub);margin-top:4px;padding:4px 8px;background:#f9f5ef;border-radius:6px;">💬 ${escapeHtml(r.message)}</div>` : '';
+    const opacity = isOld ? 'opacity:0.65;' : '';
+
+    const seatLegend = hasSeatPref ? (r.seatPref.mode==='rowCircle'
+      ? `<div style="font-size:9px;color:var(--text-sub);margin-top:2px;"><span style="display:inline-block;width:8px;height:8px;background:#87b09a;border-radius:1px;vertical-align:middle;"></span> 希望列　<span style="display:inline-block;width:8px;height:8px;background:#2d6a3f;border-radius:1px;vertical-align:middle;"></span> 希望席</div>`
+      : `<div style="font-size:9px;color:var(--text-sub);margin-top:2px;"><span style="display:inline-block;width:8px;height:8px;background:#2d6a3f;border-radius:1px;vertical-align:middle;"></span>第1希望　<span style="display:inline-block;width:8px;height:8px;background:#87b09a;border-radius:1px;vertical-align:middle;"></span>第2・3希望</div>`) : '';
+
+    return `<div style="border:1px solid var(--neutral);border-radius:10px;padding:10px 12px;margin-bottom:8px;${opacity}">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+        <span style="font-size:13px;font-weight:700;">${escapeHtml(dispName)}</span>
+        ${weightLabel}
+        <span style="font-size:10px;color:var(--text-sub);margin-left:auto;">${submitted}</span>
+      </div>
+      ${miniGrid ? `<div style="margin-bottom:6px;">
+        <div style="font-size:10px;color:var(--text-sub);margin-bottom:3px;">🪑 座席希望（下が黒板）</div>
+        ${miniGrid}${seatLegend}
+      </div>` : ''}
+      ${hasFriends ? `<div style="margin-bottom:4px;">${goodTags}${wantTags}${avoidTags}</div>` : ''}
+      ${prevSeat}${msg}
+    </div>`;
   }).join('');
 
-  el.innerHTML = `
-    <div style="overflow-x:auto;">
-    <table class="survey-table">
-      <thead>
-        <tr>
-          <th>名前</th>
-          <th>座席希望</th>
-          <th style="background:#2d6a3f;">🤝 仲のよい子</th>
-          <th style="background:#1a5276;">💙 仲良くなりたい子</th>
-          <th style="background:#922b21;">ちかくではないほうがいい子</th>
-          <th>前の席</th>
-          <th>メッセージ</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
-    </div>
-    <div class="help" style="margin-top:8px;">※「近づけたい」に反映ボタンを押すと、仲のよい子・仲良くなりたい子が条件設定に追加されます。ちかくではないほうがいい子は「離したい」条件に追加されます。</div>
-  `;
+  el.innerHTML = `<div style="margin-bottom:6px;font-size:11px;color:var(--text-sub);">
+    最新の回答を重視してAI生成に反映します。古い回答は薄く表示されます。
+  </div>` + cards;
 }
+
 
 function toggleSurveyMsg(btn){
   const detail = btn.nextElementSibling;
@@ -3569,46 +3678,122 @@ function computeScore(assignment, rows, cols){
   const seatOf = {};
   assignment.forEach((sid, idx)=>{ if(sid) seatOf[sid]=idx; });
 
-  // 離したい：絶対条件（隣接したら超大ペナルティ）
+  // ── 絶対条件：離したい（隣接→大ペナルティ）────────────────────
   state.constraints.separate.forEach(([a,b])=>{
     if(seatOf[a]!=null && seatOf[b]!=null){
       if(neighbors(seatOf[a],rows,cols).includes(seatOf[b])) score += 100000;
     }
   });
 
-  // 近づけたい：児童ごとに「1人でも周囲8マスにいれば達成」で判定
-  // 相互に希望し合っている（A→B かつ B→A）ペアは優先度2倍
-  const togetherByStudent = {}; // uid → [近づけたい相手uid]
+  // ── 近づけたい（条件設定） ────────────────────────────────────
+  const togetherByStudent = {};
   state.constraints.together.forEach(([a,b])=>{
     if(!togetherByStudent[a]) togetherByStudent[a]=[];
     if(!togetherByStudent[b]) togetherByStudent[b]=[];
     togetherByStudent[a].push(b);
     togetherByStudent[b].push(a);
   });
-
-  // 各ペアのスコア計算
   state.constraints.together.forEach(([a,b])=>{
     if(seatOf[a]==null || seatOf[b]==null) return;
     const nbA = neighbors(seatOf[a], rows, cols);
     const nbB = neighbors(seatOf[b], rows, cols);
-
-    // Aの近づけたい相手のうち、周囲8マスにいる人が1人でもいるか
     const aHasSomeone = togetherByStudent[a].some(x=>seatOf[x]!=null && nbA.includes(seatOf[x]));
-    // Bの近づけたい相手のうち、周囲8マスにいる人が1人でもいるか
     const bHasSomeone = togetherByStudent[b].some(x=>seatOf[x]!=null && nbB.includes(seatOf[x]));
-
-    // 相互希望かどうか（A→BかつB→A）
     const mutual = togetherByStudent[a].includes(b) && togetherByStudent[b].includes(a);
-    const multiplier = mutual ? 3 : 1; // 相互希望は3倍優先
-
-    // AとBが隣接していない場合
+    const multiplier = mutual ? 3 : 1;
     if(!nbA.includes(seatOf[b])){
-      // Aがすでに他の誰か近づけたい人と隣接していれば軽いペナルティ
       if(!aHasSomeone) score += 500 * multiplier;
       else             score += 50  * multiplier;
     }
   });
 
+  // ── アンケートデータをスコアに反映 ───────────────────────────
+  // ① 避けたい相手が近い → ペナルティ（大）
+  // ② なかよし/なかよくなりたい相手が近い → ボーナス
+  // ③ 希望列に座れているか（rowCircleモード）→ 差に応じたペナルティ
+  if(state.surveyResults && state.surveyResults.length > 0){
+    // 時系列重み付け：最新回答 → 重み大、古い回答 → 重み小
+    const times = state.surveyResults.map(r=>r.submittedAt ? new Date(r.submittedAt).getTime() : 0);
+    const maxT = Math.max(...times, Date.now());
+    const minT = Math.min(...times.filter(t=>t>0), maxT);
+    const span = maxT - minT || 1;
+
+    const surveyMap = {};
+    state.surveyResults.forEach(r=>{
+      const t = r.submittedAt ? new Date(r.submittedAt).getTime() : 0;
+      const ageRatio = t>0 ? (t-minT)/span : 1; // 0=古い, 1=最新
+      const weight = 0.3 + 0.7 * ageRatio;      // 30%〜100%
+      // 同じ学生の複数回答がある場合は最新優先でマージ
+      if(!surveyMap[r.studentId] || weight > (surveyMap[r.studentId]._w||0)){
+        surveyMap[r.studentId] = {...r, _w: weight};
+      }
+    });
+
+    state.students.forEach(s=>{
+      const res = surveyMap[s.id];
+      if(!res) return;
+      const w = res._w || 1;
+      const myIdx = seatOf[s.id];
+      if(myIdx == null) return;
+      const myRow = Math.floor(myIdx / cols);
+
+      // ① 避けたい相手が近い → ペナルティ（重み付き）
+      (res.friendsAvoid||[]).forEach(avoidId=>{
+        const aIdx = seatOf[avoidId];
+        if(aIdx == null) return;
+        const dist = Math.abs(Math.floor(myIdx/cols)-Math.floor(aIdx/cols))
+                   + Math.abs(myIdx%cols - aIdx%cols);
+        if(dist <= 1) score += Math.round(3000 * w);
+        else if(dist <= 2) score += Math.round(800 * w);
+      });
+
+      // ② なかよし・なかよくなりたい相手が近い → ボーナス（重み付き）
+      const wantNear = [...(res.friendsGood||[]), ...(res.friendsWant||[])];
+      wantNear.forEach(wantId=>{
+        const wIdx = seatOf[wantId];
+        if(wIdx == null) return;
+        const dist = Math.abs(Math.floor(myIdx/cols)-Math.floor(wIdx/cols))
+                   + Math.abs(myIdx%cols - wIdx%cols);
+        if(dist <= 1) score -= Math.round(200 * w);
+        else if(dist <= 2) score -= Math.round(80 * w);
+        else score += Math.round(30 * w);
+      });
+
+      // ③ 希望列（重み付き）
+      if(res.seatPref && res.seatPref.mode === 'rowCircle'){
+        const rowChoices = res.seatPref.rowChoices || [];
+        const preferredRows = rowChoices
+          .map((seatIdx, row) => seatIdx != null ? row : null)
+          .filter(r => r != null);
+        if(preferredRows.length > 0){
+          const minDist = Math.min(...preferredRows.map(r => Math.abs(myRow - r)));
+          score += Math.round(minDist * 60 * w);
+        }
+      }
+    });
+
+    // 先生メモもスコアに反映
+    (state.teacherRelations||[]).forEach(r=>{
+      if(r.type==='separate' && r.studentIds.length>=2){
+        const [a,b]=[r.studentIds[0],r.studentIds[1]];
+        if(seatOf[a]!=null && seatOf[b]!=null){
+          const dist=Math.abs(Math.floor(seatOf[a]/cols)-Math.floor(seatOf[b]/cols))
+                    +Math.abs(seatOf[a]%cols-seatOf[b]%cols);
+          if(dist<=2) score += 2000;
+        }
+      } else if(r.type==='good' && r.studentIds.length>=2){
+        const [a,b]=[r.studentIds[0],r.studentIds[1]];
+        if(seatOf[a]!=null && seatOf[b]!=null){
+          const dist=Math.abs(Math.floor(seatOf[a]/cols)-Math.floor(seatOf[b]/cols))
+                    +Math.abs(seatOf[a]%cols-seatOf[b]%cols);
+          if(dist<=2) score -= 100;
+          else score += 50;
+        }
+      }
+    });
+  }
+
+  // ── 前回と同じ席を避ける ─────────────────────────────────────
   if(state.constraints.avoidPrevious){
     state.students.forEach(s=>{
       const prev = state.previousSeating[s.id];
@@ -3616,54 +3801,41 @@ function computeScore(assignment, rows, cols){
     });
   }
 
+  // ── 男女バランス ──────────────────────────────────────────────
   if(state.constraints.genderBalance){
     for(let c=0;c<cols;c++){
       let m=0,f=0;
       for(let r=0;r<rows;r++){
         const sid = assignment[r*cols+c];
-        if(sid){
-          const st = studentById(sid);
-          if(st.gender==='male') m++;
-          else if(st.gender==='female') f++;
-        }
+        if(sid){ const st=studentById(sid); if(st.gender==='male') m++; else if(st.gender==='female') f++; }
       }
       score += Math.abs(m-f)*4;
     }
   }
 
-  // classInfoの男女人数設定がある場合、anySeatsへの男女配置比率を誘導
+  // ── 男女人数比率 ──────────────────────────────────────────────
   const ci = state.classInfo||{};
   const targetM = parseInt(ci.maleCount)||0;
   const targetF = parseInt(ci.femaleCount)||0;
   if(targetM>0 || targetF>0){
     let placedM=0, placedF=0;
-    assignment.forEach(sid=>{
-      if(!sid) return;
-      const s = studentById(sid);
-      if(s && s.gender==='male') placedM++;
-      else if(s && s.gender==='female') placedF++;
-    });
-    if(targetM>0) score += Math.abs(placedM - targetM) * 3;
-    if(targetF>0) score += Math.abs(placedF - targetF) * 3;
+    assignment.forEach(sid=>{ if(!sid) return; const s=studentById(sid); if(s&&s.gender==='male') placedM++; else if(s&&s.gender==='female') placedF++; });
+    if(targetM>0) score += Math.abs(placedM-targetM)*3;
+    if(targetF>0) score += Math.abs(placedF-targetF)*3;
   }
 
-  // seat template (座席ごとの男女指定) → 絶対条件
+  // ── 座席テンプレート男女指定（絶対条件）────────────────────────
   assignment.forEach((sid, idx)=>{
     if(!sid) return;
     const tpl = state.seatTemplate[idx];
-    if(tpl && tpl!=='any'){
-      const st = studentById(sid);
-      if(st && st.gender !== 'none' && st.gender !== tpl) score += 100000;
-    }
+    if(tpl && tpl!=='any'){ const st=studentById(sid); if(st&&st.gender!=='none'&&st.gender!==tpl) score+=100000; }
   });
 
-  // 生徒指導：周囲8マスに近づけない児童
+  // ── 生徒指導：周囲に近づけない ───────────────────────────────
   (state.constraints.disciplineFixed||[]).forEach(d=>{
     if(seatOf[d.studentId]==null) return;
-    const nb = neighbors(seatOf[d.studentId], rows, cols);
-    (d.avoidIds||[]).forEach(aid=>{
-      if(seatOf[aid]!=null && nb.includes(seatOf[aid])) score += 1000;
-    });
+    const nb=neighbors(seatOf[d.studentId],rows,cols);
+    (d.avoidIds||[]).forEach(aid=>{ if(seatOf[aid]!=null&&nb.includes(seatOf[aid])) score+=1000; });
   });
 
   return score;
@@ -4285,39 +4457,40 @@ function savePrevious(){
     alert('先に案を選んで決定してください。');
     return;
   }
-  const newPrev = {};
-  state.currentSeating.forEach((sid, idx)=>{ if(sid) newPrev[sid]=idx; });
-  state.previousSeating = newPrev;
-  // 自動的に「前回と同じ席を避ける」をONにする
-  state.constraints.avoidPrevious = true;
-  const cb = document.getElementById('avoidPrevious');
-  if(cb) cb.checked = true;
-  prevSeatDetailOpen = false;
-
-  // 席替え履歴に追加
-  addSeatHistory();
-
-  saveState();
-  renderPrevSeatStatus();
-  renderSeatHistory();
-  showToast('席替えを確定しました。履歴に保存しました。', 'ok', 3500);
+  // ラベル入力（省略可）
+  showInputDialog('席替えの回数ラベル（省略可）', '例：1学期 第1回　2学期 第1回　など', '').then(label=>{
+    const newPrev = {};
+    state.currentSeating.forEach((sid, idx)=>{ if(sid) newPrev[sid]=idx; });
+    state.previousSeating = newPrev;
+    state.constraints.avoidPrevious = true;
+    const cb = document.getElementById('avoidPrevious');
+    if(cb) cb.checked = true;
+    prevSeatDetailOpen = false;
+    addSeatHistory(label || '');
+    saveState();
+    renderPrevSeatStatus();
+    renderSeatHistory();
+    showToast('席替えを確定しました。履歴に保存しました。', 'ok', 3500);
+  });
 }
 
-/* ---------- 席替え履歴 ---------- */
-const SEAT_HISTORY_MAX = 10;
+/* ---------- 席替え履歴（年間管理） ---------- */
+const SEAT_HISTORY_MAX = 20; // 年間20回分保持
 
-function addSeatHistory(){
+function addSeatHistory(label){
   if(!state.currentSeating) return;
   if(!state.seatHistory) state.seatHistory = [];
   const entry = {
     savedAt: new Date().toISOString(),
+    label: label || '',
     classInfo: JSON.parse(JSON.stringify(state.classInfo||{})),
     students: JSON.parse(JSON.stringify(state.students||[])),
     grid: JSON.parse(JSON.stringify(state.grid||{})),
     seatTemplate: JSON.parse(JSON.stringify(state.seatTemplate||[])),
     seating: JSON.parse(JSON.stringify(state.currentSeating)),
+    surveyCount: (state.surveyResults||[]).length, // 参考：アンケート件数
   };
-  state.seatHistory.unshift(entry); // 新しいものを先頭に
+  state.seatHistory.unshift(entry);
   if(state.seatHistory.length > SEAT_HISTORY_MAX)
     state.seatHistory = state.seatHistory.slice(0, SEAT_HISTORY_MAX);
 }
@@ -4327,24 +4500,130 @@ function renderSeatHistory(){
   if(!el) return;
   const history = state.seatHistory || [];
   if(history.length === 0){
-    el.innerHTML = '<div class="help" style="margin:0;">まだ履歴がありません。「📌 席替え確定」を押すと保存されます（最大10件）。</div>';
+    el.innerHTML = '<div class="help" style="margin:0;">まだ履歴がありません。「📌 席替え確定」を押すと保存されます（年間最大20件）。</div>';
     return;
   }
   el.innerHTML = history.map((entry, i)=>{
     const date = new Date(entry.savedAt);
-    const label = `${date.getFullYear()}/${date.getMonth()+1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2,'0')}`;
+    const dateStr = `${date.getFullYear()}/${date.getMonth()+1}/${date.getDate()}`;
     const cls = entry.classInfo||{};
     const clsLabel = cls.grade&&cls.group ? `${cls.grade}年${cls.group}組` : '';
+    const lbl = entry.label ? `<span style="font-weight:800;color:var(--chalk-green);">${escapeHtml(entry.label)}</span>　` : '';
+    const surveyBadge = entry.surveyCount > 0
+      ? `<span style="font-size:10px;background:#e8f4ed;color:var(--chalk-green);border-radius:4px;padding:1px 5px;margin-left:4px;">📋 ${entry.surveyCount}件</span>` : '';
+    const isPrev = isSameSeating(entry.seating, state.previousSeating);
+    const prevBadge = isPrev ? `<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:4px;padding:1px 5px;">前回設定中</span>` : '';
     return `<div class="list-row" style="align-items:center;flex-wrap:wrap;gap:6px;">
-      <div style="flex:1;min-width:120px;">
-        <div style="font-weight:700;font-size:13px;">${i===0?'🕐 最新　':''}${label}</div>
-        <div style="font-size:12px;color:var(--text-sub);">${clsLabel} ${(entry.students||[]).length}名</div>
+      <div style="flex:1;min-width:130px;">
+        <div style="font-size:13px;line-height:1.5;">${i===0?'🕐 ':''}${lbl}${dateStr}${surveyBadge}${prevBadge}</div>
+        <div style="font-size:11px;color:var(--text-sub);">${clsLabel} ${(entry.students||[]).length}名</div>
       </div>
-      <button class="btn-secondary" style="font-size:12px;" onclick="printSeatHistory(${i})">📄 PDF</button>
-      <button class="btn-secondary" style="font-size:12px;" onclick="restoreSeatHistory(${i})">↩ 復元</button>
+      <button class="btn-secondary" style="font-size:11px;" onclick="setAsPrevious(${i})" title="この席替えを『前回』として設定（次回の席替えで同じ席を避ける）">🔄 前回に設定</button>
+      <button class="btn-secondary" style="font-size:11px;" onclick="printSeatHistory(${i})">📄 PDF</button>
+      <button class="btn-secondary" style="font-size:11px;" onclick="restoreSeatHistory(${i})">↩ 復元</button>
       <button class="btn-x" onclick="deleteSeatHistory(${i})">×</button>
     </div>`;
+  }).join('') + `
+    <div style="margin-top:10px;border-top:1px solid var(--neutral);padding-top:10px;">
+      <button class="btn-secondary" style="width:100%;font-size:12px;" onclick="showYearSummary()">📊 年間サマリーを見る</button>
+    </div>`;
+}
+
+// 座席データが「前回設定」と一致するか判定
+function isSameSeating(seating, prevSeating){
+  if(!seating || !prevSeating) return false;
+  const keys = Object.keys(prevSeating);
+  if(keys.length===0) return false;
+  return keys.every(sid=>{
+    const idx = seating.indexOf(sid);
+    return idx !== -1 && prevSeating[sid] === idx;
+  });
+}
+
+// 履歴エントリを「前回席」として設定
+async function setAsPrevious(idx){
+  const entry = (state.seatHistory||[])[idx];
+  if(!entry) return;
+  const lbl = entry.label ? `「${entry.label}」` : new Date(entry.savedAt).toLocaleDateString('ja-JP');
+  const ok = await dlgConfirm(`${lbl} の座席を「前回の席替え」として設定します。\n次回AI生成時に、同じ席を避けるようになります。`, '設定する');
+  if(!ok) return;
+  const newPrev = {};
+  (entry.seating||[]).forEach((sid,idx2)=>{ if(sid) newPrev[sid]=idx2; });
+  state.previousSeating = newPrev;
+  state.constraints.avoidPrevious = true;
+  const cb = document.getElementById('avoidPrevious');
+  if(cb) cb.checked = true;
+  saveState();
+  renderSeatHistory();
+  renderPrevSeatStatus();
+  showToast(`${lbl}を前回の席替えとして設定しました`, 'ok', 3000);
+}
+
+// 年間サマリー（各児童のエリア分布）
+async function showYearSummary(){
+  const history = state.seatHistory||[];
+  if(history.length===0){ showToast('履歴がありません','error'); return; }
+
+  const rows = (state.grid||{}).rows||5;
+  const cols = (state.grid||{}).cols||6;
+  const midRow = Math.floor(rows/2);
+  const midCol = Math.floor(cols/2);
+
+  // 各児童のエリア集計
+  const summary = {}; // studentId → {front,back,left,right,total}
+  state.students.forEach(s=>{
+    summary[s.id] = {name:s.name||s.yomi||(s.number+'番'), front:0, back:0, left:0, right:0, total:0};
+  });
+
+  history.forEach(entry=>{
+    const c = (entry.grid||{}).cols || cols;
+    const r = (entry.grid||{}).rows || rows;
+    const mR = Math.floor(r/2);
+    const mC = Math.floor(c/2);
+    (entry.seating||[]).forEach((sid, idx)=>{
+      if(!sid || !summary[sid]) return;
+      const row = Math.floor(idx/c);
+      const col = idx%c;
+      if(row < mR)  summary[sid].front++;
+      else          summary[sid].back++;
+      if(col < mC)  summary[sid].left++;
+      else          summary[sid].right++;
+      summary[sid].total++;
+    });
+  });
+
+  // HTML生成
+  const sorted = state.students.slice().sort((a,b)=>(a.number||0)-(b.number||0));
+  const tableRows = sorted.map(s=>{
+    const d = summary[s.id]||{front:0,back:0,left:0,right:0,total:0};
+    if(d.total===0) return '';
+    const frontPct = d.total>0 ? Math.round(d.front/d.total*100) : 0;
+    return `<tr>
+      <td style="padding:4px 8px;font-size:12px;white-space:nowrap;">${escapeHtml(d.name)}</td>
+      <td style="padding:4px 8px;text-align:center;font-size:12px;">${d.total}</td>
+      <td style="padding:4px 8px;text-align:center;font-size:12px;">${d.front}回</td>
+      <td style="padding:4px 8px;text-align:center;font-size:12px;">${d.back}回</td>
+      <td style="padding:4px 8px;text-align:center;">
+        <div style="background:#e8f4ed;border-radius:4px;height:8px;width:${frontPct}%;min-width:2px;display:inline-block;"></div>
+      </td>
+    </tr>`;
   }).join('');
+
+  const html = `<div style="font-size:12px;color:var(--text-sub);margin-bottom:8px;">
+    全${history.length}回の席替えをもとに集計しています。</div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+    <table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <thead><tr style="background:#f4ecd9;font-weight:700;">
+        <th style="padding:4px 8px;text-align:left;">児童名</th>
+        <th style="padding:4px 8px;">合計</th>
+        <th style="padding:4px 8px;">前の方</th>
+        <th style="padding:4px 8px;">後ろの方</th>
+        <th style="padding:4px 8px;width:60px;">前方率</th>
+      </tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table></div>`;
+
+  await showDialog(`📊 年間サマリー（${history.length}回分）`, html, [{label:'閉じる', cls:'dialog-ok', value:null}]);
 }
 
 // 履歴の座席表を日付入りPDF（印刷）で出力する
@@ -4531,158 +4810,330 @@ function seatDistance(idxA,idxB){
 }
 
 function renderSeatAnalysis(){
-  const panel=document.getElementById('seatCheckPanel');
+  const panel = document.getElementById('seatCheckPanel');
   if(!panel) return;
-  if(!state.currentSeating||state.currentSeating.filter(Boolean).length===0){
+  if(!state.currentSeating || state.currentSeating.filter(Boolean).length===0){
     panel.innerHTML='<div class="help" style="margin:0;color:var(--text-sub);">座席を確定すると自動的に確認されます。</div>';
     return;
   }
-  const cols=state.grid.cols||6;
-  const issues=[],warnings=[],infos=[];
-  const seatOf={};
-  state.currentSeating.forEach((sid,idx)=>{if(sid)seatOf[sid]=idx;});
-  const sName=id=>{const s=studentById(id);return s?s.name||s.yomi:'?';};
-  const rowLabel=idx=>`${Math.floor(idx/cols)+1}行${idx%cols+1}列`;
 
-  // ① 離したい条件違反
-  (state.constraints.separate||[]).forEach(([a,b])=>{
-    const ia=seatOf[a],ib=seatOf[b];
-    if(ia==null||ib==null) return;
-    const d=seatDistance(ia,ib);
-    if(d<=2) issues.push(`🔴 【条件違反・離す】${sName(a)}（${rowLabel(ia)}）と${sName(b)}（${rowLabel(ib)}）が近い（距離${d}マス）`);
-  });
+  const cols = state.grid.cols||6, rows = state.grid.rows||5;
+  const seatOf = {};
+  state.currentSeating.forEach((sid,idx)=>{ if(sid) seatOf[sid]=idx; });
 
-  // ② 近づけたい条件
+  const sName = id=>{ const s=studentById(id); return s ? s.name||s.yomi||numberOnlyLabel(s) : '?'; };
+  const rowLabel = idx=>`${Math.floor(idx/cols)+1}行${idx%cols+1}列`;
+  const dist = (a,b)=> a!=null&&b!=null
+    ? Math.abs(Math.floor(a/cols)-Math.floor(b/cols)) + Math.abs(a%cols-b%cols)
+    : 999;
+
+  // 各学生の「近くにいてほしい人」を集計（条件設定・アンケート・先生メモを合算）
+  const wantNearMap = {}; // sid → Set of sids
+  state.students.forEach(s=>{ wantNearMap[s.id] = new Set(); });
+
   (state.constraints.together||[]).forEach(([a,b])=>{
-    const ia=seatOf[a],ib=seatOf[b];
-    if(ia==null||ib==null) return;
-    const d=seatDistance(ia,ib);
-    if(d>2) warnings.push(`🟡 【条件・近づける】${sName(a)}と${sName(b)}が離れている（距離${d}マス）`);
+    if(wantNearMap[a]) wantNearMap[a].add(b);
+    if(wantNearMap[b]) wantNearMap[b].add(a);
+  });
+  const surveyMap = {};
+  (state.surveyResults||[]).forEach(r=>{ surveyMap[r.studentId]=r; });
+  Object.values(surveyMap).forEach(res=>{
+    if(!wantNearMap[res.studentId]) return;
+    [...(res.friendsGood||[]), ...(res.friendsWant||[])].forEach(id=>{
+      wantNearMap[res.studentId].add(id);
+    });
+  });
+  (state.teacherRelations||[]).filter(r=>r.type==='good').forEach(r=>{
+    const [a,b]=[r.studentIds[0],r.studentIds[1]];
+    if(a&&b){ if(wantNearMap[a]) wantNearMap[a].add(b); if(wantNearMap[b]) wantNearMap[b].add(a); }
   });
 
-  // ③ 視力配慮
+  // 各学生の「近くにいる友達の数」を計算
+  const nearFriendCount = {}; // sid → 近くにいる友達数
+  state.students.forEach(s=>{
+    const myIdx = seatOf[s.id];
+    if(myIdx==null){ nearFriendCount[s.id]=0; return; }
+    let cnt=0;
+    wantNearMap[s.id].forEach(fid=>{
+      if(dist(myIdx, seatOf[fid]) <= 2) cnt++;
+    });
+    nearFriendCount[s.id]=cnt;
+  });
+
+  // ══ 優先度A：絶対条件違反（必ず対応） ══
+  const criticals = [];
+
+  (state.constraints.separate||[]).forEach(([a,b])=>{
+    const d = dist(seatOf[a], seatOf[b]);
+    if(d<=2) criticals.push({
+      text: `${sName(a)}（${rowLabel(seatOf[a])}）と ${sName(b)}（${rowLabel(seatOf[b])}）`,
+      sub: `離すべきペアが距離${d}マス以内にいます`,
+      action: '席を入れ替えてください',
+      ids:[a,b]
+    });
+  });
+
   (state.constraints.visionRestrictions||[]).forEach(r=>{
     const idx=seatOf[r.studentId];
     if(idx==null) return;
     const row=Math.floor(idx/cols)+1;
-    if(row>r.maxRow) issues.push(`🔴 【配慮違反】${sName(r.studentId)}（${rowLabel(idx)}）が前から${r.maxRow}列以内に入っていません`);
-  });
-
-  // ④ アンケート：避けたい相手が近い
-  (state.surveyResults||[]).forEach(res=>{
-    const myIdx=seatOf[res.studentId];
-    if(myIdx==null) return;
-    (res.friendsAvoid||[]).forEach(avoidId=>{
-      const aIdx=seatOf[avoidId];
-      if(aIdx==null) return;
-      const d=seatDistance(myIdx,aIdx);
-      if(d<=2) warnings.push(`🟡 【アンケート・避ける】${sName(res.studentId)}が避けたい${sName(avoidId)}と近い（${rowLabel(myIdx)}↔${rowLabel(aIdx)}、距離${d}マス）`);
+    if(row>r.maxRow) criticals.push({
+      text: `${sName(r.studentId)}（現在${rowLabel(idx)}）`,
+      sub: `前から${r.maxRow}行以内が必要です（現在${row}行目）`,
+      action: '前の方の席に移動してください',
+      ids:[r.studentId]
     });
   });
 
-  // ⑤ アンケート：希望列と違う（rowCircle）
-  (state.surveyResults||[]).forEach(res=>{
-    if(!res.seatPref||res.seatPref.mode!=='rowCircle') return;
+  (state.constraints.disciplineFixed||[]).forEach(d=>{
+    if(!seatOf[d.studentId]) return;
+    (d.avoidIds||[]).forEach(aid=>{
+      const dd=dist(seatOf[d.studentId],seatOf[aid]);
+      if(dd<=1) criticals.push({
+        text: `${sName(d.studentId)}と ${sName(aid)}`,
+        sub: `生徒指導：直接隣になっています（距離${dd}マス）`,
+        action: '離してください',
+        ids:[d.studentId,aid]
+      });
+    });
+  });
+
+  // ══ 優先度B：避けたいのに近い（強く対応推奨） ══
+  const avoidProblems = [];
+
+  Object.values(surveyMap).forEach(res=>{
     const myIdx=seatOf[res.studentId];
     if(myIdx==null) return;
-    const myRow=Math.floor(myIdx/cols);
-    const choices=res.seatPref.rowChoices||[];
-    if(choices[myRow]===undefined) return;
-    if(choices[myRow]!==myIdx){
-      const wantCol=(choices[myRow]%cols)+1;
-      infos.push(`🔵 【アンケート希望】${sName(res.studentId)}（${rowLabel(myIdx)}）は${myRow+1}行${wantCol}列を希望`);
+    (res.friendsAvoid||[]).forEach(avoidId=>{
+      const d=dist(myIdx, seatOf[avoidId]);
+      if(d<=1) avoidProblems.push({
+        priority: 1,
+        text: `${sName(res.studentId)} → ${sName(avoidId)}`,
+        sub: `アンケート：すぐ隣にいます（距離${d}マス）`,
+        action: '最優先で離してください',
+        ids:[res.studentId,avoidId]
+      });
+      else if(d<=2) avoidProblems.push({
+        priority: 2,
+        text: `${sName(res.studentId)} → ${sName(avoidId)}`,
+        sub: `アンケート：近い席です（距離${d}マス）`,
+        action: 'できれば離してください',
+        ids:[res.studentId,avoidId]
+      });
+    });
+  });
+
+  (state.teacherRelations||[]).filter(r=>r.type==='separate').forEach(r=>{
+    const [a,b]=[r.studentIds[0],r.studentIds[1]];
+    if(!a||!b) return;
+    const d=dist(seatOf[a],seatOf[b]);
+    if(d<=2) avoidProblems.push({
+      priority: 2,
+      text: `${sName(a)} と ${sName(b)}`,
+      sub: `先生メモ「要離す」：距離${d}マス${r.note?' — '+r.note:''}`,
+      action: 'できれば離してください',
+      ids:[a,b]
+    });
+  });
+
+  avoidProblems.sort((a,b)=>a.priority-b.priority);
+
+  // ══ 優先度C：近くに友達が0人（改善推奨） ══
+  // 「友達がいない人」だけを出す。1人でも友達が近くにいれば出さない。
+  const lonelyStudents = [];
+
+  state.students.forEach(s=>{
+    const wants = wantNearMap[s.id];
+    if(!wants || wants.size===0) return; // 「近づけたい」設定がそもそもない
+    if(seatOf[s.id]==null) return;
+    if(nearFriendCount[s.id]===0){
+      // 誰も近くにいない → 誰が候補かを表示
+      const candidates = [...wants]
+        .map(fid=>({ id:fid, d:dist(seatOf[s.id],seatOf[fid]) }))
+        .filter(x=>x.d<999)
+        .sort((a,b)=>a.d-b.d)
+        .slice(0,2); // 最も近い2人を候補として表示
+      lonelyStudents.push({
+        name: sName(s.id),
+        pos: rowLabel(seatOf[s.id]),
+        candidates: candidates.map(x=>`${sName(x.id)}（距離${x.d}マス）`),
+        wantCount: wants.size,
+        id: s.id
+      });
     }
   });
 
-  // ⑥ 先生メモ
-  (state.teacherRelations||[]).forEach(r=>{
-    if(r.type==='separate'){
-      const [a,b]=[r.studentIds[0],r.studentIds[1]];
-      if(!a||!b) return;
-      const ia=seatOf[a],ib=seatOf[b];
-      if(ia==null||ib==null) return;
-      const d=seatDistance(ia,ib);
-      if(d<=2) warnings.push(`🟡 【先生メモ・要離す】${sName(a)}と${sName(b)}が近い（距離${d}マス）${r.note?' — '+r.note:''}`);
-    }else if(r.type==='good'){
-      const [a,b]=[r.studentIds[0],r.studentIds[1]];
-      if(!a||!b) return;
-      const ia=seatOf[a],ib=seatOf[b];
-      if(ia==null||ib==null) return;
-      const d=seatDistance(ia,ib);
-      if(d<=2) infos.push(`🟢 【先生メモ・なかよし】${sName(a)}と${sName(b)}が近い（距離${d}マス）${r.note?' — '+r.note:''}`);
-      else     warnings.push(`🟡 【先生メモ・なかよし】${sName(a)}と${sName(b)}が離れている（距離${d}マス）${r.note?' — '+r.note:''}`);
-    }else if(r.type==='note'){
-      const sids=(r.studentIds||[]).map(sName).join('・');
-      infos.push(`📝 【先生メモ】${sids}${r.note?' — '+r.note:''}`);
-    }
+  // ══ 優先度D：参考情報 ══
+  const infos = [];
+
+  // なかよしペアが近い（肯定情報）
+  let goodPairCount=0;
+  state.students.forEach(s=>{
+    wantNearMap[s.id].forEach(fid=>{
+      if(s.id < fid && dist(seatOf[s.id], seatOf[fid])<=2) goodPairCount++;
+    });
+  });
+  if(goodPairCount>0) infos.push(`🟢 ${goodPairCount}組の「なかよし・近づけたい」ペアが近い席になっています`);
+
+  // 先生メモ（個別メモ）
+  (state.teacherRelations||[]).filter(r=>r.type==='note').forEach(r=>{
+    const sids=(r.studentIds||[]).map(sName).join('・');
+    infos.push(`📝 【先生メモ】${sids}${r.note?' — '+r.note:''}`);
   });
 
-  if(!issues.length&&!warnings.length&&!infos.length){
-    panel.innerHTML='<div style="color:var(--ok);font-size:13px;font-weight:700;">✅ 特に問題は見つかりませんでした。</div>';
+  // ══ HTML生成 ══
+  const totalIssues = criticals.length + avoidProblems.length;
+  const totalLonely = lonelyStudents.length;
+
+  if(totalIssues===0 && totalLonely===0){
+    panel.innerHTML = `
+      <div style="color:var(--ok);font-size:13px;font-weight:700;margin-bottom:6px;">✅ 重要な問題は見つかりませんでした。</div>
+      ${infos.map(t=>`<div style="font-size:12px;padding:4px 10px;margin-bottom:3px;background:#e8f4ed;border-left:3px solid #4a7c59;border-radius:0 6px 6px 0;">${escapeHtml(t)}</div>`).join('')}
+    `;
     return;
   }
-  const all=[...issues,...warnings,...infos];
-  panel.innerHTML='<div style="font-size:11px;color:var(--text-sub);margin-bottom:6px;">'+
-    (issues.length?`🔴 条件違反 ${issues.length}件　`:'')+(warnings.length?`🟡 注意 ${warnings.length}件　`:'')+(infos.length?`🔵 情報 ${infos.length}件`:'')+'</div>'+
-    all.map(t=>{
-      const c=t.startsWith('🔴')?'#fbe8e8':t.startsWith('🟡')?'#fff8e1':t.startsWith('🟢')?'#e8f4ed':'#e8f0fb';
-      const b=t.startsWith('🔴')?'#e74c3c':t.startsWith('🟡')?'#f39c12':t.startsWith('🟢')?'#4a7c59':'#3b82f6';
-      return `<div style="font-size:12px;line-height:1.6;padding:5px 10px;margin-bottom:3px;background:${c};border-left:3px solid ${b};border-radius:0 6px 6px 0;">${escapeHtml(t)}</div>`;
-    }).join('');
+
+  let html = `<div style="font-size:11px;color:var(--text-sub);margin-bottom:8px;">
+    ${criticals.length ? `<span style="color:#e74c3c;font-weight:700;">🔴 必須対応 ${criticals.length}件</span>　` : ''}
+    ${avoidProblems.length ? `<span style="color:#e67e22;font-weight:700;">🟠 対応推奨 ${avoidProblems.length}件</span>　` : ''}
+    ${lonelyStudents.length ? `<span style="color:#f39c12;font-weight:700;">🟡 友達0人 ${lonelyStudents.length}名</span>　` : ''}
+    ${infos.filter(i=>i.startsWith('🟢')).length ? `<span style="color:#4a7c59;">🟢 良好ペアあり</span>` : ''}
+  </div>`;
+
+  // 🔴 必須対応
+  if(criticals.length){
+    html += `<div style="font-size:11px;font-weight:700;color:#e74c3c;margin:8px 0 4px;">🔴 必ず対応が必要</div>`;
+    html += criticals.map(item=>`
+      <div style="background:#fbe8e8;border-left:3px solid #e74c3c;border-radius:0 8px 8px 0;padding:8px 10px;margin-bottom:5px;">
+        <div style="font-size:12px;font-weight:700;">${escapeHtml(item.text)}</div>
+        <div style="font-size:11px;color:#666;margin-top:1px;">${escapeHtml(item.sub)}</div>
+        <div style="font-size:11px;color:#e74c3c;margin-top:3px;font-weight:600;">→ ${escapeHtml(item.action)}</div>
+      </div>`).join('');
+  }
+
+  // 🟠 対応推奨（避けたい相手が近い）
+  if(avoidProblems.length){
+    html += `<div style="font-size:11px;font-weight:700;color:#e67e22;margin:8px 0 4px;">🟠 対応推奨（避けたいのに近い）</div>`;
+    html += avoidProblems.map(item=>`
+      <div style="background:#fff3e0;border-left:3px solid #e67e22;border-radius:0 8px 8px 0;padding:8px 10px;margin-bottom:5px;">
+        <div style="font-size:12px;font-weight:700;">${escapeHtml(item.text)}</div>
+        <div style="font-size:11px;color:#666;margin-top:1px;">${escapeHtml(item.sub)}</div>
+        <div style="font-size:11px;color:#e67e22;margin-top:3px;">→ ${escapeHtml(item.action)}</div>
+      </div>`).join('');
+  }
+
+  // 🟡 友達が1人も近くにいない
+  if(lonelyStudents.length){
+    html += `<div style="font-size:11px;font-weight:700;color:#856404;margin:8px 0 4px;">🟡 近くに友達が0人の児童（優先度：中）</div>`;
+    html += `<div style="font-size:11px;color:var(--text-sub);margin-bottom:5px;">※ 1人でも友達が近くにいれば表示されません。</div>`;
+    html += lonelyStudents.map(item=>`
+      <div style="background:#fff8e1;border-left:3px solid #f39c12;border-radius:0 8px 8px 0;padding:8px 10px;margin-bottom:5px;">
+        <div style="font-size:12px;font-weight:700;">${escapeHtml(item.name)}（${escapeHtml(item.pos)}）</div>
+        <div style="font-size:11px;color:#666;margin-top:2px;">
+          希望 ${item.wantCount}名 → 近くにいない<br>
+          ${item.candidates.length ? '最も近い候補：'+item.candidates.map(c=>`<span style="font-weight:600;">${escapeHtml(c)}</span>`).join('、') : ''}
+        </div>
+      </div>`).join('');
+  }
+
+  // 🟢 参考情報
+  if(infos.length){
+    html += infos.map(t=>
+      `<div style="font-size:12px;padding:4px 10px;margin-bottom:3px;background:#e8f4ed;border-left:3px solid #4a7c59;border-radius:0 6px 6px 0;">${escapeHtml(t)}</div>`
+    ).join('');
+  }
+
+  panel.innerHTML = html;
 }
 
 /* ---------- 先生目線印刷 ---------- */
 function printTeacherView(){
-  // 座席グリッドと黒板ラベルを取得
-  const finalSection = document.getElementById('finalSection');
-  const grid = finalSection ? finalSection.querySelector('.seat-grid') : null;
-  const boardLabel = finalSection ? finalSection.querySelector('.blackboard-label') : null;
-  if(!grid){ window.print(); return; }
-
-  // 座席セルを逆順に並び替え（180°回転 = 先生目線）
-  const cells = Array.from(grid.children);
-  cells.reverse().forEach(c => grid.appendChild(c));
-
-  // 黒板ラベルを下に移動
-  if(boardLabel){
-    boardLabel.dataset.origText = boardLabel.textContent;
-    boardLabel.textContent = boardLabel.textContent.replace('（教室の前）','（先生の背後）');
-    // gridの後ろに移動
-    grid.parentNode.insertBefore(boardLabel, grid.nextSibling);
-    boardLabel.dataset.moved = '1';
+  if(!state.currentSeating || state.currentSeating.filter(Boolean).length===0){
+    showToast('先に座席を確定してください','error'); return;
   }
+  const cols = state.grid.cols || 6;
+  const rows = state.grid.rows || 5;
+  const cls = state.classInfo || {};
+  const clsLabel = (cls.grade && cls.group) ? `${cls.grade}年${cls.group}組` : '';
+  const stuMap = {};
+  state.students.forEach(s => stuMap[s.id] = s);
 
-  // 先生目線注記を追加
-  const note = document.createElement('div');
-  note.id = 'teacherViewNote';
-  note.style.cssText = 'text-align:center;font-size:11px;color:#777;margin-bottom:6px;';
-  note.textContent = '👁 先生目線（黒板を背にした向き）';
-  grid.parentNode.insertBefore(note, grid);
+  // 先生目線：配列を逆順（180°回転）
+  const seatingReversed = (state.currentSeating || []).slice().reverse();
+  const tplReversed = (state.seatTemplate || []).slice().reverse();
 
-  window.print();
-
-  // 印刷後に元に戻す
-  // afterprintイベントで復元
-  function restore(){
-    // 注記を削除
-    const n = document.getElementById('teacherViewNote');
-    if(n) n.remove();
-
-    // セルを元の順に戻す
-    const cells2 = Array.from(grid.children);
-    cells2.reverse().forEach(c => grid.appendChild(c));
-
-    // 黒板ラベルを元の位置に戻す
-    if(boardLabel && boardLabel.dataset.moved){
-      boardLabel.textContent = boardLabel.dataset.origText || boardLabel.textContent;
-      delete boardLabel.dataset.moved;
-      // gridの前に戻す
-      grid.parentNode.insertBefore(boardLabel, grid);
+  let cells = '';
+  seatingReversed.forEach((sid, i) => {
+    const tpl = tplReversed[i] || 'any';
+    if(tpl === 'disabled'){
+      cells += `<div class="seat disabled"></div>`;
+      return;
     }
+    const s = sid ? stuMap[sid] : null;
+    const cls2 = tpl==='male' ? 'male' : tpl==='female' ? 'female' : 'any';
+    const name = s ? escapeHtml((s.name || s.yomi || '').trim()) : '';
+    cells += `<div class="seat ${cls2}">${name}</div>`;
+  });
 
-    window.removeEventListener('afterprint', restore);
+  const fontSize = Math.max(7, Math.min(12, Math.floor(240 / Math.max(cols,1) / Math.max(rows,1) * 10) / 10));
+
+  const html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8">
+<title>${clsLabel} 座席表</title>
+<style>
+  @page{ size:A4 landscape; margin:8mm; }
+  *{ box-sizing:border-box; }
+  html{ width:277mm; height:190mm; }
+  body{ margin:0; padding:5mm; font-family:"Hiragino Sans","Yu Gothic",sans-serif; color:#222;
+        width:277mm; height:190mm; overflow:hidden; }
+  .head{ display:flex; align-items:center; justify-content:space-between;
+         border-bottom:1.5px solid #333; padding-bottom:2mm; margin-bottom:3mm; height:11mm; }
+  .head h1{ font-size:15pt; font-weight:800; margin:0; white-space:nowrap; }
+  .date-area{ display:flex; align-items:center; gap:3mm; }
+  .date-area label{ font-size:9pt; color:#555; white-space:nowrap; }
+  .date-area input{ font-size:10pt; border:1px solid #aaa; border-radius:3px; padding:1.5mm 3mm; width:40mm; font-family:inherit; }
+  @media print{ .date-area input{ border:none; } .printbtn{ display:none; } }
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(${cols},1fr);
+    gap:1.5mm;
+    height:155mm;
   }
-  window.addEventListener('afterprint', restore);
+  .seat{
+    border:1px solid #888; border-radius:3px;
+    display:flex; align-items:center; justify-content:center;
+    font-size:${fontSize}pt; font-weight:700;
+    text-align:center; padding:1mm; overflow:hidden; word-break:break-all;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  .seat.male{ background:#dcecf9; }
+  .seat.female{ background:#fbe2e7; }
+  .seat.any{ background:#f4ecd9; }
+  .seat.disabled{ background:#e8e8e8; border-style:dashed; color:#bbb; font-size:7pt; }
+  .blackboard{ background:#222; color:#fff; text-align:center; padding:2mm; border-radius:3px;
+               font-size:11pt; font-weight:800; letter-spacing:.2em; margin-top:2mm; height:8mm;
+               display:flex; align-items:center; justify-content:center;
+               -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .printbtn{ display:block; margin:5mm auto 0; padding:3mm 14mm; font-size:11pt;
+             background:#2d5a3d; color:#fff; border:none; border-radius:6px; cursor:pointer; font-weight:700; }
+</style></head>
+<body>
+  <div class="head">
+    <h1>${clsLabel}　座席表</h1>
+    <div class="date-area">
+      <label for="printDate">日付</label>
+      <input type="text" id="printDate" placeholder="例：令和8年6月25日">
+    </div>
+  </div>
+  <div class="grid">${cells}</div>
+  <div class="blackboard">黒　板</div>
+  <button class="printbtn" onclick="window.print()">🖨️ 印刷・PDF保存</button>
+</body></html>`;
+
+  const w = window.open('', '_blank');
+  if(!w){ showToast('ポップアップがブロックされました。設定を確認してください。','error'); return; }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
 }
 let editMode = false;
 let selectedSeatIdx = null;   // 配置済み席の選択
@@ -5450,6 +5901,19 @@ function renderAccountInfo(){
   }
 }
 
+function copySurveyLink(){
+  const input = document.getElementById('surveyLinkInput');
+  if(!input || !input.value){ showToast('先にログインしてください','error'); return; }
+  navigator.clipboard.writeText(input.value)
+    .then(()=>showToast('リンクをコピーしました。児童に送ってください。','ok',3000))
+    .catch(()=>{
+      // フォールバック：テキスト選択
+      input.select();
+      document.execCommand('copy');
+      showToast('リンクをコピーしました','ok',2000);
+    });
+}
+
 function renderSurveyLink(){
   if(!currentTeacher) return;
   const classId = currentTeacher.uid || currentTeacher.teacherId || '';
@@ -5688,13 +6152,13 @@ async function sendAIChat(){
   if(sendBtn) sendBtn.disabled = true;
 
   try{
-    // GAS経由でGemini APIを呼ぶ
+    // GAS経由でGemini APIを呼ぶ（有料枠：履歴16件・gemini-2.5-pro）
     const systemContext = buildSeatContext();
     const res = await callApi('aiConsult', {
       token: authToken,
       context: systemContext,
       prompt: prompt,
-      chatHistory: aiChatHistory.slice(-8) // 直近8件のみ送信
+      chatHistory: aiChatHistory.slice(-16) // 有料枠：直近16件送信
     });
 
     thinkingEl.remove();
@@ -5707,8 +6171,7 @@ async function sendAIChat(){
       renderSwapProposals(proposals);
     } else {
       const msg = res.message || '通信に失敗しました';
-      addChatBubble('assistant', '⚠️ ' + msg +
-        (msg.includes('APIキー') ? '\n\n管理者画面でGemini APIキーを設定してください。' : ''));
+      addChatBubble('assistant', '⚠️ ' + msg);
     }
   } catch(e) {
     thinkingEl.remove();
