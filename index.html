@@ -1400,6 +1400,8 @@
               💡 <strong>未配置リストをタップ</strong> → 選択 → 空席をタップで配置<br>
               💡 <strong>空席を長押し</strong>（PCは右クリック）→ 男子席・女子席・指定なし・使わない を切替
             </div>
+            <button class="btn-secondary" style="width:100%;background:#e8f4ed;border-color:var(--chalk-green);font-weight:700;margin-bottom:6px;" onclick="tempSave()">💾 一時保存（GASに保存）</button>
+            <div id="tempSaveMsg" style="font-size:11px;color:var(--chalk-green);text-align:center;height:16px;margin-bottom:4px;"></div>
             <div class="card" style="margin-bottom:8px;">
               <div style="font-size:13px;font-weight:700;margin-bottom:6px;">
                 未配置の児童 <span id="finalUnplacedCount" style="color:var(--accent);"></span>
@@ -1427,7 +1429,10 @@
           </div>
           <div class="floor-note">※ 実際の教室の向き（窓側・廊下側など）に合わせて読み替えてください。</div>
 
-          <h2>📋 座席チェック</h2>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">
+            <h2 style="margin:0;">📋 座席チェック</h2>
+            <button class="btn-secondary" style="font-size:12px;white-space:nowrap;" onclick="requestAIFix()">🤖 AIに改善を依頼</button>
+          </div>
           <div class="card" id="seatCheckPanel">
             <div class="help" style="margin:0;color:var(--text-sub);">座席を確定・変更すると自動的に更新されます。</div>
           </div>
@@ -2009,9 +2014,13 @@ function showDialog(title, msg, buttons){
     const msgEl   = document.getElementById('dialogMsg');
     const btnsEl  = document.getElementById('dialogBtns');
     titleEl.textContent = title;
-    msgEl.textContent   = msg;
+    // HTML含む場合はinnerHTML、それ以外はtextContent（XSS対策）
+    if(msg && (msg.includes('<') || msg.includes('&lt;'))) {
+      msgEl.innerHTML = msg;
+    } else {
+      msgEl.textContent = msg;
+    }
     btnsEl.innerHTML = '';
-    // 入力欄がある場合
     const inputEl = document.getElementById('dialogInput');
     if(inputEl) inputEl.style.display='none';
     buttons.forEach(btn=>{
@@ -4460,6 +4469,28 @@ function backToCandidates(){
   selectedSeatIdx = null;
 }
 
+/* ---------- 一時保存（確定なし・履歴なし） ---------- */
+async function tempSave(){
+  if(!state.currentSeating || state.currentSeating.filter(Boolean).length===0){
+    showToast('席が配置されていません','error'); return;
+  }
+  const msg = document.getElementById('tempSaveMsg');
+  if(msg) msg.textContent = '保存中…';
+  try{
+    const res = await callApi('saveClassData', {token: authToken, data: state});
+    if(res && res.success){
+      if(msg){ msg.textContent='💾 一時保存しました'; setTimeout(()=>{ msg.textContent=''; },3000); }
+      showToast('一時保存しました','ok',2000);
+    }else{
+      if(msg){ msg.textContent='⚠️ 保存失敗'; setTimeout(()=>{ msg.textContent=''; },3000); }
+      showToast('保存に失敗しました: '+(res&&res.message||''),'error');
+    }
+  }catch(e){
+    if(msg){ msg.textContent=''; }
+    showToast('保存エラー: '+e.message,'error');
+  }
+}
+
 function savePrevious(){
   if(!state.currentSeating){
     alert('先に案を選んで決定してください。');
@@ -4817,6 +4848,9 @@ function seatDistance(idxA,idxB){
   return Math.max(Math.abs(rA-rB), Math.abs(cA-cB)); // チェビシェフ距離（斜め隣=1）
 }
 
+// 最後に収集したチェック結果（AIに依頼ボタンで使用）
+let _lastSeatIssues = [];
+
 function renderSeatAnalysis(){
   const panel = document.getElementById('seatCheckPanel');
   if(!panel) return;
@@ -4825,243 +4859,266 @@ function renderSeatAnalysis(){
     return;
   }
 
-  const cols = state.grid.cols||6, rows = state.grid.rows||5;
-  const seatOf = {};
+  const cols=state.grid.cols||6, rows=state.grid.rows||5;
+  const seatOf={};
   state.currentSeating.forEach((sid,idx)=>{ if(sid) seatOf[sid]=idx; });
+  const sName=id=>{ const s=studentById(id); return s?s.name||s.yomi||numberOnlyLabel(s):'?'; };
+  const rowLabel=idx=>`${Math.floor(idx/cols)+1}行${idx%cols+1}列`;
+  const cheb=(a,b)=>a!=null&&b!=null
+    ?Math.max(Math.abs(Math.floor(a/cols)-Math.floor(b/cols)),Math.abs(a%cols-b%cols)):999;
 
-  const sName = id=>{ const s=studentById(id); return s ? s.name||s.yomi||numberOnlyLabel(s) : '?'; };
-  const rowLabel = idx=>`${Math.floor(idx/cols)+1}行${idx%cols+1}列`;
-  const dist = (a,b)=> a!=null&&b!=null
-    ? Math.max(Math.abs(Math.floor(a/cols)-Math.floor(b/cols)), Math.abs(a%cols-b%cols))
-    : 999; // チェビシェフ距離（斜め隣=1、周囲8マス=距離1）
-
-  // 各学生の「近くにいてほしい人」を集計（条件設定・アンケート・先生メモを合算）
-  const wantNearMap = {}; // sid → Set of sids
-  state.students.forEach(s=>{ wantNearMap[s.id] = new Set(); });
-
+  // 各学生の「近くにいてほしい人」集計
+  const wantNearMap={};
+  state.students.forEach(s=>{ wantNearMap[s.id]=new Set(); });
   (state.constraints.together||[]).forEach(([a,b])=>{
     if(wantNearMap[a]) wantNearMap[a].add(b);
     if(wantNearMap[b]) wantNearMap[b].add(a);
   });
-  const surveyMap = {};
+  const surveyMap={};
   (state.surveyResults||[]).forEach(r=>{ surveyMap[r.studentId]=r; });
   Object.values(surveyMap).forEach(res=>{
     if(!wantNearMap[res.studentId]) return;
-    [...(res.friendsGood||[]), ...(res.friendsWant||[])].forEach(id=>{
-      wantNearMap[res.studentId].add(id);
-    });
+    [...(res.friendsGood||[]),...(res.friendsWant||[])].forEach(id=>wantNearMap[res.studentId].add(id));
   });
   (state.teacherRelations||[]).filter(r=>r.type==='good').forEach(r=>{
     const [a,b]=[r.studentIds[0],r.studentIds[1]];
-    if(a&&b){ if(wantNearMap[a]) wantNearMap[a].add(b); if(wantNearMap[b]) wantNearMap[b].add(a); }
+    if(a&&b){if(wantNearMap[a])wantNearMap[a].add(b);if(wantNearMap[b])wantNearMap[b].add(a);}
   });
 
-  // 各学生の「近くにいる友達の数」を計算
-  const nearFriendCount = {}; // sid → 近くにいる友達数
+  const nearFriendCount={};
   state.students.forEach(s=>{
-    const myIdx = seatOf[s.id];
-    if(myIdx==null){ nearFriendCount[s.id]=0; return; }
+    const myIdx=seatOf[s.id];
+    if(myIdx==null){nearFriendCount[s.id]=0;return;}
     let cnt=0;
     wantNearMap[s.id].forEach(fid=>{
-      const fIdx = seatOf[fid];
-      if(fIdx==null) return;
-      // チェビシェフ距離≤1 = 周囲8マス以内
-      const d = Math.max(
-        Math.abs(Math.floor(myIdx/cols)-Math.floor(fIdx/cols)),
-        Math.abs(myIdx%cols - fIdx%cols)
-      );
-      if(d <= 1) cnt++;
+      if(seatOf[fid]!=null && cheb(myIdx,seatOf[fid])<=1) cnt++;
     });
     nearFriendCount[s.id]=cnt;
   });
 
-  // ══ 優先度A：絶対条件違反（必ず対応） ══
-  const criticals = [];
-
+  // ══ A：絶対条件違反 ══
+  const criticals=[];
   (state.constraints.separate||[]).forEach(([a,b])=>{
-    const d = dist(seatOf[a], seatOf[b]);
+    const d=cheb(seatOf[a],seatOf[b]);
     if(d<=1) criticals.push({
-      text: `${sName(a)}（${rowLabel(seatOf[a])}）と ${sName(b)}（${rowLabel(seatOf[b])}）`,
-      sub: `離すべきペアが周囲8マス以内にいます（距離${d}）`,
-      action: '席を入れ替えてください',
-      ids:[a,b]
+      text:`${sName(a)}（${rowLabel(seatOf[a])}）と ${sName(b)}（${rowLabel(seatOf[b])}）`,
+      sub:'離すべきペアが周囲8マス以内にいます',
+      action:'席を入れ替えてください',
+      evidence:{type:'constraint',kind:'separate',ids:[a,b]}
     });
   });
-
   (state.constraints.visionRestrictions||[]).forEach(r=>{
     const idx=seatOf[r.studentId];
     if(idx==null) return;
     const row=Math.floor(idx/cols)+1;
     if(row>r.maxRow) criticals.push({
-      text: `${sName(r.studentId)}（現在${rowLabel(idx)}）`,
-      sub: `前から${r.maxRow}行以内が必要です（現在${row}行目）`,
-      action: '前の方の席に移動してください',
-      ids:[r.studentId]
+      text:`${sName(r.studentId)}（現在${rowLabel(idx)}）`,
+      sub:`前から${r.maxRow}行以内が必要（現在${row}行目）`,
+      action:'前の方の席に移動してください',
+      evidence:{type:'constraint',kind:'vision',ids:[r.studentId]}
     });
   });
-
   (state.constraints.disciplineFixed||[]).forEach(d=>{
     if(!seatOf[d.studentId]) return;
     (d.avoidIds||[]).forEach(aid=>{
-      const dd=dist(seatOf[d.studentId],seatOf[aid]);
-      if(dd<=1) criticals.push({
-        text: `${sName(d.studentId)}と ${sName(aid)}`,
-        sub: `生徒指導：直接隣になっています（距離${dd}マス）`,
-        action: '離してください',
-        ids:[d.studentId,aid]
+      if(cheb(seatOf[d.studentId],seatOf[aid])<=1) criticals.push({
+        text:`${sName(d.studentId)} と ${sName(aid)}`,
+        sub:'生徒指導：周囲8マスに配置されています',
+        action:'離してください',
+        evidence:{type:'constraint',kind:'discipline',ids:[d.studentId,aid]}
       });
     });
   });
 
-  // ══ 優先度B：避けたいのに近い（強く対応推奨） ══
-  const avoidProblems = [];
-
+  // ══ B：避けたいのに近い ══
+  const avoidProblems=[];
   Object.values(surveyMap).forEach(res=>{
     const myIdx=seatOf[res.studentId];
     if(myIdx==null) return;
     (res.friendsAvoid||[]).forEach(avoidId=>{
-      const d=dist(myIdx, seatOf[avoidId]);
+      const d=cheb(myIdx,seatOf[avoidId]);
       if(d<=1) avoidProblems.push({
-        priority: 1,
-        text: `${sName(res.studentId)} → ${sName(avoidId)}`,
-        sub: `アンケート：周囲8マスの隣にいます（距離${d}）`,
-        action: '最優先で離してください',
-        ids:[res.studentId,avoidId]
+        priority:1,
+        text:`${sName(res.studentId)} → ${sName(avoidId)}`,
+        sub:'アンケート：周囲8マスの隣にいます',
+        action:'最優先で離してください',
+        evidence:{type:'survey',studentId:res.studentId,res,avoidId}
       });
       else if(d<=2) avoidProblems.push({
-        priority: 2,
-        text: `${sName(res.studentId)} → ${sName(avoidId)}`,
-        sub: `アンケート：やや近い席です（距離${d}）`,
-        action: 'できれば離してください',
-        ids:[res.studentId,avoidId]
+        priority:2,
+        text:`${sName(res.studentId)} → ${sName(avoidId)}`,
+        sub:`アンケート：やや近い席です（距離${d}）`,
+        action:'できれば離してください',
+        evidence:{type:'survey',studentId:res.studentId,res,avoidId}
       });
     });
   });
-
   (state.teacherRelations||[]).filter(r=>r.type==='separate').forEach(r=>{
     const [a,b]=[r.studentIds[0],r.studentIds[1]];
     if(!a||!b) return;
-    const d=dist(seatOf[a],seatOf[b]);
-    if(d<=1) avoidProblems.push({
-      priority: 2,
-      text: `${sName(a)} と ${sName(b)}`,
-      sub: `先生メモ「要離す」：周囲8マス以内（距離${d}）${r.note?' — '+r.note:''}`,
-      action: 'できれば離してください',
-      ids:[a,b]
+    if(cheb(seatOf[a],seatOf[b])<=1) avoidProblems.push({
+      priority:2,
+      text:`${sName(a)} と ${sName(b)}`,
+      sub:`先生メモ「要離す」：周囲8マス以内${r.note?' — '+r.note:''}`,
+      action:'できれば離してください',
+      evidence:{type:'teacherMemo',note:r.note,ids:[a,b]}
     });
   });
-
   avoidProblems.sort((a,b)=>a.priority-b.priority);
 
-  // ══ 優先度C：近くに友達が0人（改善推奨） ══
-  // 「友達がいない人」だけを出す。1人でも友達が近くにいれば出さない。
-  const lonelyStudents = [];
-
+  // ══ C：友達が0人 ══
+  const lonelyStudents=[];
   state.students.forEach(s=>{
-    const wants = wantNearMap[s.id];
-    if(!wants || wants.size===0) return; // 「近づけたい」設定がそもそもない
+    const wants=wantNearMap[s.id];
+    if(!wants||wants.size===0) return;
     if(seatOf[s.id]==null) return;
     if(nearFriendCount[s.id]===0){
-      // 誰も近くにいない → 誰が候補かを表示
-      const candidates = [...wants]
-        .map(fid=>({ id:fid, d:dist(seatOf[s.id],seatOf[fid]) }))
-        .filter(x=>x.d<999)
-        .sort((a,b)=>a.d-b.d)
-        .slice(0,2); // 最も近い2人を候補として表示
+      const candidates=[...wants]
+        .map(fid=>({id:fid,d:cheb(seatOf[s.id],seatOf[fid])}))
+        .filter(x=>x.d<999).sort((a,b)=>a.d-b.d).slice(0,2);
+      const res=surveyMap[s.id];
       lonelyStudents.push({
-        name: sName(s.id),
-        pos: rowLabel(seatOf[s.id]),
-        candidates: candidates.map(x=>`${sName(x.id)}（距離${x.d}マス）`),
-        wantCount: wants.size,
-        id: s.id
+        name:sName(s.id),pos:rowLabel(seatOf[s.id]),
+        candidates:candidates.map(x=>`${sName(x.id)}（距離${x.d}）`),
+        wantCount:wants.size,id:s.id,
+        evidence:{type:'lonely',studentId:s.id,res,wants:[...wants]}
       });
     }
   });
 
-  // ══ 優先度D：参考情報 ══
-  const infos = [];
-
-  // なかよしペアが近い（肯定情報）
+  // ══ 参考情報 ══
+  const infos=[];
   let goodPairCount=0;
   state.students.forEach(s=>{
     wantNearMap[s.id].forEach(fid=>{
-      if(s.id < fid && dist(seatOf[s.id], seatOf[fid])<=2) goodPairCount++;
+      if(s.id<fid && cheb(seatOf[s.id],seatOf[fid])<=1) goodPairCount++;
     });
   });
-  if(goodPairCount>0) infos.push(`🟢 ${goodPairCount}組の「なかよし・近づけたい」ペアが近い席になっています`);
-
-  // 先生メモ（個別メモ）
+  if(goodPairCount>0) infos.push(`🟢 ${goodPairCount}組の「なかよし・近づけたい」ペアが周囲8マス以内にいます`);
   (state.teacherRelations||[]).filter(r=>r.type==='note').forEach(r=>{
     const sids=(r.studentIds||[]).map(sName).join('・');
     infos.push(`📝 【先生メモ】${sids}${r.note?' — '+r.note:''}`);
   });
 
-  // ══ HTML生成 ══
-  const totalIssues = criticals.length + avoidProblems.length;
-  const totalLonely = lonelyStudents.length;
+  // AI依頼用に保持
+  _lastSeatIssues=[...criticals,...avoidProblems,...lonelyStudents.map(l=>({
+    text:l.name+'（'+l.pos+'）',sub:'近くに友達0人。候補：'+l.candidates.join('、')
+  }))];
 
-  if(totalIssues===0 && totalLonely===0){
-    panel.innerHTML = `
-      <div style="color:var(--ok);font-size:13px;font-weight:700;margin-bottom:6px;">✅ 重要な問題は見つかりませんでした。</div>
-      ${infos.map(t=>`<div style="font-size:12px;padding:4px 10px;margin-bottom:3px;background:#e8f4ed;border-left:3px solid #4a7c59;border-radius:0 6px 6px 0;">${escapeHtml(t)}</div>`).join('')}
-    `;
+  // エビデンスストア
+  window._seatEvidenceStore=[];
+  const storeEv=(ev)=>{ const i=window._seatEvidenceStore.length; window._seatEvidenceStore.push(ev); return i; };
+
+  const makeItem=(item,bg,bc)=>{
+    const ei=storeEv(item.evidence);
+    return `<div style="background:${bg};border-left:3px solid ${bc};border-radius:0 8px 8px 0;padding:8px 10px;margin-bottom:5px;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;">
+        <div style="flex:1;">
+          <div style="font-size:12px;font-weight:700;">${escapeHtml(item.text)}</div>
+          <div style="font-size:11px;color:#666;margin-top:1px;">${escapeHtml(item.sub)}</div>
+          <div style="font-size:11px;color:${bc};margin-top:3px;font-weight:600;">→ ${escapeHtml(item.action)}</div>
+        </div>
+        <button onclick="showSeatEvidence(${ei})" style="flex-shrink:0;font-size:10px;padding:3px 8px;background:#fff;border:1px solid ${bc};color:${bc};border-radius:6px;cursor:pointer;white-space:nowrap;">📋 詳細</button>
+      </div>
+    </div>`;
+  };
+
+  if(!criticals.length&&!avoidProblems.length&&!lonelyStudents.length){
+    panel.innerHTML=`<div style="color:var(--ok);font-size:13px;font-weight:700;margin-bottom:6px;">✅ 重要な問題は見つかりませんでした。</div>
+      ${infos.map(t=>`<div style="font-size:12px;padding:4px 10px;margin-bottom:3px;background:#e8f4ed;border-left:3px solid #4a7c59;border-radius:0 6px 6px 0;">${escapeHtml(t)}</div>`).join('')}`;
     return;
   }
 
-  let html = `<div style="font-size:11px;color:var(--text-sub);margin-bottom:8px;">
-    ${criticals.length ? `<span style="color:#e74c3c;font-weight:700;">🔴 必須対応 ${criticals.length}件</span>　` : ''}
-    ${avoidProblems.length ? `<span style="color:#e67e22;font-weight:700;">🟠 対応推奨 ${avoidProblems.length}件</span>　` : ''}
-    ${lonelyStudents.length ? `<span style="color:#f39c12;font-weight:700;">🟡 友達0人 ${lonelyStudents.length}名</span>　` : ''}
-    ${infos.filter(i=>i.startsWith('🟢')).length ? `<span style="color:#4a7c59;">🟢 良好ペアあり</span>` : ''}
+  let html=`<div style="font-size:11px;color:var(--text-sub);margin-bottom:8px;">
+    ${criticals.length?`<span style="color:#e74c3c;font-weight:700;">🔴 必須対応 ${criticals.length}件</span>　`:''}
+    ${avoidProblems.length?`<span style="color:#e67e22;font-weight:700;">🟠 対応推奨 ${avoidProblems.length}件</span>　`:''}
+    ${lonelyStudents.length?`<span style="color:#856404;font-weight:700;">🟡 友達0人 ${lonelyStudents.length}名</span>　`:''}
+    ${infos.filter(i=>i.startsWith('🟢')).length?`<span style="color:#4a7c59;">🟢 良好ペアあり</span>`:''}
   </div>`;
 
-  // 🔴 必須対応
   if(criticals.length){
-    html += `<div style="font-size:11px;font-weight:700;color:#e74c3c;margin:8px 0 4px;">🔴 必ず対応が必要</div>`;
-    html += criticals.map(item=>`
-      <div style="background:#fbe8e8;border-left:3px solid #e74c3c;border-radius:0 8px 8px 0;padding:8px 10px;margin-bottom:5px;">
-        <div style="font-size:12px;font-weight:700;">${escapeHtml(item.text)}</div>
-        <div style="font-size:11px;color:#666;margin-top:1px;">${escapeHtml(item.sub)}</div>
-        <div style="font-size:11px;color:#e74c3c;margin-top:3px;font-weight:600;">→ ${escapeHtml(item.action)}</div>
-      </div>`).join('');
+    html+=`<div style="font-size:11px;font-weight:700;color:#e74c3c;margin:8px 0 4px;">🔴 必ず対応が必要</div>`;
+    html+=criticals.map(i=>makeItem(i,'#fbe8e8','#e74c3c')).join('');
   }
-
-  // 🟠 対応推奨（避けたい相手が近い）
   if(avoidProblems.length){
-    html += `<div style="font-size:11px;font-weight:700;color:#e67e22;margin:8px 0 4px;">🟠 対応推奨（避けたいのに近い）</div>`;
-    html += avoidProblems.map(item=>`
-      <div style="background:#fff3e0;border-left:3px solid #e67e22;border-radius:0 8px 8px 0;padding:8px 10px;margin-bottom:5px;">
-        <div style="font-size:12px;font-weight:700;">${escapeHtml(item.text)}</div>
-        <div style="font-size:11px;color:#666;margin-top:1px;">${escapeHtml(item.sub)}</div>
-        <div style="font-size:11px;color:#e67e22;margin-top:3px;">→ ${escapeHtml(item.action)}</div>
-      </div>`).join('');
+    html+=`<div style="font-size:11px;font-weight:700;color:#e67e22;margin:8px 0 4px;">🟠 対応推奨（避けたいのに近い）</div>`;
+    html+=avoidProblems.map(i=>makeItem(i,'#fff3e0','#e67e22')).join('');
   }
-
-  // 🟡 友達が1人も近くにいない
   if(lonelyStudents.length){
-    html += `<div style="font-size:11px;font-weight:700;color:#856404;margin:8px 0 4px;">🟡 近くに友達が0人の児童（優先度：中）</div>`;
-    html += `<div style="font-size:11px;color:var(--text-sub);margin-bottom:5px;">※ 1人でも友達が近くにいれば表示されません。</div>`;
-    html += lonelyStudents.map(item=>`
-      <div style="background:#fff8e1;border-left:3px solid #f39c12;border-radius:0 8px 8px 0;padding:8px 10px;margin-bottom:5px;">
-        <div style="font-size:12px;font-weight:700;">${escapeHtml(item.name)}（${escapeHtml(item.pos)}）</div>
-        <div style="font-size:11px;color:#666;margin-top:2px;">
-          希望 ${item.wantCount}名 → 近くにいない<br>
-          ${item.candidates.length ? '最も近い候補：'+item.candidates.map(c=>`<span style="font-weight:600;">${escapeHtml(c)}</span>`).join('、') : ''}
+    html+=`<div style="font-size:11px;font-weight:700;color:#856404;margin:8px 0 4px;">🟡 近くに友達が0人の児童（優先度：中）</div>`;
+    html+=`<div style="font-size:11px;color:var(--text-sub);margin-bottom:5px;">※ 1人でも周囲8マスにいれば表示されません。</div>`;
+    html+=lonelyStudents.map(item=>{
+      const ei=storeEv(item.evidence);
+      return `<div style="background:#fff8e1;border-left:3px solid #f39c12;border-radius:0 8px 8px 0;padding:8px 10px;margin-bottom:5px;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:6px;">
+          <div style="flex:1;">
+            <div style="font-size:12px;font-weight:700;">${escapeHtml(item.name)}（${escapeHtml(item.pos)}）</div>
+            <div style="font-size:11px;color:#666;margin-top:2px;">希望 ${item.wantCount}名 → 近くにいない<br>
+              ${item.candidates.length?'最も近い候補：'+item.candidates.map(c=>`<b>${escapeHtml(c)}</b>`).join('、'):''}
+            </div>
+          </div>
+          <button onclick="showSeatEvidence(${ei})" style="flex-shrink:0;font-size:10px;padding:3px 8px;background:#fff;border:1px solid #f39c12;color:#856404;border-radius:6px;cursor:pointer;white-space:nowrap;">📋 詳細</button>
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }
-
-  // 🟢 参考情報
-  if(infos.length){
-    html += infos.map(t=>
-      `<div style="font-size:12px;padding:4px 10px;margin-bottom:3px;background:#e8f4ed;border-left:3px solid #4a7c59;border-radius:0 6px 6px 0;">${escapeHtml(t)}</div>`
-    ).join('');
-  }
-
-  panel.innerHTML = html;
+  if(infos.length) html+=infos.map(t=>`<div style="font-size:12px;padding:4px 10px;margin-bottom:3px;background:#e8f4ed;border-left:3px solid #4a7c59;border-radius:0 6px 6px 0;">${escapeHtml(t)}</div>`).join('');
+  panel.innerHTML=html;
 }
 
-/* ---------- 先生目線印刷 ---------- */
+/* ── エビデンスダイアログ ── */
+async function showSeatEvidence(idx){
+  const ev=(window._seatEvidenceStore||[])[idx];
+  if(!ev){showToast('詳細情報なし','error');return;}
+  const sName2=id=>{const s=studentById(id);return s?s.name||s.yomi||numberOnlyLabel(s):'?';};
+  const tag=(ids,color,icon)=>(ids||[]).map(id=>`<span style="display:inline-block;background:${color};color:#fff;font-size:11px;padding:2px 7px;border-radius:10px;margin:2px;">${icon} ${escapeHtml(sName2(id))}</span>`).join('');
+  let content='';
+  if(ev.type==='survey'&&ev.res){
+    const res=ev.res;
+    content=`<div style="font-weight:700;margin-bottom:8px;">${escapeHtml(sName2(res.studentId))} さんのアンケート回答</div>
+      ${ev.avoidId?`<div style="background:#fbe8e8;border-radius:6px;padding:6px 10px;margin-bottom:6px;font-size:12px;">⚠️ <b>${escapeHtml(sName2(ev.avoidId))}</b> さんを避けたいと回答しています</div>`:''}
+      ${(res.friendsAvoid||[]).length?`<div style="margin-bottom:4px;"><span style="font-size:11px;color:#666;">避けたい：</span><br>${tag(res.friendsAvoid,'#922b21','⚠️')}</div>`:''}
+      ${(res.friendsGood||[]).length?`<div style="margin-bottom:4px;"><span style="font-size:11px;color:#666;">なかよし：</span><br>${tag(res.friendsGood,'#2d6a3f','🤝')}</div>`:''}
+      ${(res.friendsWant||[]).length?`<div style="margin-bottom:4px;"><span style="font-size:11px;color:#666;">なかよくなりたい：</span><br>${tag(res.friendsWant,'#1a5276','💙')}</div>`:''}
+      ${res.seatPref&&res.seatPref.mode!=='none'?`<div style="margin-bottom:4px;font-size:11px;color:#666;">座席希望：${escapeHtml(formatSeatPref(res.seatPref))}</div>`:''}
+      ${res.wantPrevSeat?`<div style="font-size:11px;color:#856404;margin-top:4px;">📍 前の席を希望</div>`:''}
+      ${res.message?`<div style="font-size:11px;background:#f9f5ef;padding:6px 8px;border-radius:6px;margin-top:6px;">💬 ${escapeHtml(res.message)}</div>`:''}
+      <div style="font-size:10px;color:#aaa;margin-top:8px;">提出：${res.submittedAt?String(res.submittedAt).slice(0,10):'不明'}</div>`;
+  }else if(ev.type==='lonely'){
+    content=`<div style="font-weight:700;margin-bottom:8px;">${escapeHtml(sName2(ev.studentId))} さんの近くにいてほしい人</div>
+      <div>${(ev.wants||[]).map(id=>`<span style="display:inline-block;background:#2d6a3f;color:#fff;font-size:11px;padding:2px 8px;border-radius:10px;margin:2px;">👤 ${escapeHtml(sName2(id))}</span>`).join('')}</div>
+      ${ev.res?`<div style="font-size:10px;color:#aaa;margin-top:8px;">アンケート提出：${ev.res.submittedAt?String(ev.res.submittedAt).slice(0,10):'不明'}</div>`:''}`;
+  }else if(ev.type==='constraint'){
+    content=`<div style="font-size:12px;">条件設定タブで設定された制約です。</div>
+      <div style="font-size:11px;color:#666;margin-top:6px;">種別：${ev.kind==='separate'?'離したいペア':ev.kind==='vision'?'視力・聴力配慮':ev.kind==='discipline'?'生徒指導':'その他'}</div>
+      <div style="font-size:11px;color:#666;margin-top:4px;">対象：${(ev.ids||[]).map(sName2).join(' / ')}</div>`;
+  }else if(ev.type==='teacherMemo'){
+    content=`<div style="font-size:12px;">先生の人間関係メモです。</div>
+      ${ev.note?`<div style="font-size:12px;margin-top:6px;background:#fff3cd;padding:6px 8px;border-radius:6px;">📝 ${escapeHtml(ev.note)}</div>`:''}
+      <div style="font-size:11px;color:#666;margin-top:6px;">対象：${(ev.ids||[]).map(sName2).join(' / ')}</div>`;
+  }
+  await showDialog('📋 エビデンス詳細',`<div style="text-align:left;font-size:12px;line-height:1.6;">${content}</div>`,
+    [{label:'閉じる',cls:'dialog-ok',value:null}]);
+}
+
+/* ── AIに座席改善を依頼 ── */
+async function requestAIFix(){
+  if(!state.currentSeating||state.currentSeating.filter(Boolean).length===0){
+    showToast('先に座席を確定してください','error');return;
+  }
+  if(!_lastSeatIssues||_lastSeatIssues.length===0){
+    showToast('座席チェックに問題がありません','ok');return;
+  }
+  const issueText=_lastSeatIssues.slice(0,8).map((item,i)=>`${i+1}. ${item.text}：${item.sub}`).join('\n');
+  const prompt=`座席チェックで以下の問題が見つかりました。具体的な席の入れ替え案を提案してください。\n\n${issueText}`;
+  document.getElementById('aiChatInput').value=prompt;
+  document.getElementById('aiChatLog').scrollIntoView({behavior:'smooth',block:'start'});
+  await new Promise(r=>setTimeout(r,400));
+  sendAIChat();
+}
+
+
+
 function printTeacherView(){
   if(!state.currentSeating || state.currentSeating.filter(Boolean).length===0){
     showToast('先に座席を確定してください','error'); return;
