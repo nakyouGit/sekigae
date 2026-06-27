@@ -218,7 +218,7 @@ textarea{min-height:70px;resize:vertical;}
 // ==============================
 // 設定
 // ==============================
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbxg_Yk64-pqJX6SZrPGuNp-F-QtAzhvSJBhQrcpwVzZoxLGl8sD4XYc8FuFbkVbH-kr4w/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbzr0IEUmTLdokz7AZBFm8e-50HE1Ay5pumcgNgKLKH453DN9Sa_heLKXv0P-tvOu4hGMg/exec';
 
 // ==============================
 // 状態変数
@@ -265,7 +265,10 @@ function studentById(id){ return (surveyConfig.students||[]).find(s=>s.id===id);
 function displayName(s){
   if(!s) return '';
   const mode = (surveyConfig.surveySettings||{}).surveyNameMode||'yomi';
-  return mode==='yomi' ? (s.yomi||s.name||'') : (s.name||s.yomi||'');
+  if(mode==='yomi' && s.yomi) return s.yomi;
+  if(s.name) return s.name;
+  if(s.yomi) return s.yomi;
+  return s.number ? s.number + 'ばん' : '?'; // 名前なし→番号（ひらがな）
 }
 
 // ==============================
@@ -282,6 +285,9 @@ async function init(){
   // GASからアンケート設定を取得
   const res = await callApi('getSurveyConfig', {classId});
   hide('loadingCard');
+  hide('errorCard');
+  hide('closedCard');
+  hide('surveyDone');
 
   if(!res.success){
     showError(res.message || 'クラスが見つかりません。リンクを確認してください。');
@@ -420,19 +426,23 @@ function renderSurveySettings(){
   }
 
   // 仲の良い子
+  function makeMaxText(max){
+    if(max) return isKanji ? `（最大${max}人まで）` : `（さいだい${max}にん まで）`;
+    return isKanji ? '（複数選択可）' : '（いくつでも えらべます）';
+  }
   setSection('friendGoodSection','friendGoodHeading','friendGoodHelp',
     q.good&&q.good.on, q.good&&q.good.label, isKanji?'仲の良い子':'なかの よい こ',
-    q.good&&q.good.help, isKanji?'ずっと仲良しの子を選んでください（いくつでも選べます）。':'ずっと なかよしの こを えらんでください（いくつでも えらべます）。');
+    (q.good&&q.good.help||(isKanji?'ずっと仲良しの子を選んでください。':'ずっと なかよしの こを えらんでください。'))+makeMaxText(q.good&&q.good.max), null);
 
   // 仲良くなりたい子
   setSection('friendWantSection','friendWantHeading','friendWantHelp',
     q.want&&q.want.on, q.want&&q.want.label, isKanji?'仲良くなりたい子':'なかよく なりたい こ',
-    q.want&&q.want.help, isKanji?'もっと仲良くなりたい子を選んでください（いくつでも選べます）。':'もっと なかよく なりたい こを えらんでください（いくつでも えらべます）。');
+    (q.want&&q.want.help||(isKanji?'もっと仲良くなりたい子を選んでください。':'もっと なかよく なりたい こを えらんでください。'))+makeMaxText(q.want&&q.want.max), null);
 
   // 避けたい子
   setSection('friendAvoidSection','friendAvoidHeading','friendAvoidHelp',
     q.avoid&&q.avoid.on, q.avoid&&q.avoid.label, isKanji?'近くではないほうがいい子':'ちかくではないほうがいい こ',
-    q.avoid&&q.avoid.help, isKanji?'近くになると気になる子を選んでください。先生だけが見ます（いくつでも選べます）。':'ちかくに なると きになる こを えらんでください。せんせいだけが みます。（いくつでも えらべます）');
+    (q.avoid&&q.avoid.help||(isKanji?'近くになると気になる子を選んでください。先生だけが見ます。':'ちかくに なると きになる こを えらんでください。せんせいだけが みます。'))+makeMaxText(q.avoid&&q.avoid.max), null);
 
   // 前の席
   document.getElementById('prevSection').hidden = !(q.prev&&q.prev.on);
