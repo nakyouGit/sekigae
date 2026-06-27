@@ -3741,8 +3741,10 @@ function computeScore(assignment, rows, cols){
       (res.friendsAvoid||[]).forEach(avoidId=>{
         const aIdx = seatOf[avoidId];
         if(aIdx == null) return;
-        const dist = Math.abs(Math.floor(myIdx/cols)-Math.floor(aIdx/cols))
-                   + Math.abs(myIdx%cols - aIdx%cols);
+        const dist = Math.max(
+          Math.abs(Math.floor(myIdx/cols)-Math.floor(aIdx/cols)),
+          Math.abs(myIdx%cols - aIdx%cols)
+        ); // チェビシェフ距離（周囲8マス=1）
         if(dist <= 1) score += Math.round(3000 * w);
         else if(dist <= 2) score += Math.round(800 * w);
       });
@@ -3752,8 +3754,10 @@ function computeScore(assignment, rows, cols){
       wantNear.forEach(wantId=>{
         const wIdx = seatOf[wantId];
         if(wIdx == null) return;
-        const dist = Math.abs(Math.floor(myIdx/cols)-Math.floor(wIdx/cols))
-                   + Math.abs(myIdx%cols - wIdx%cols);
+        const dist = Math.max(
+          Math.abs(Math.floor(myIdx/cols)-Math.floor(wIdx/cols)),
+          Math.abs(myIdx%cols - wIdx%cols)
+        ); // チェビシェフ距離
         if(dist <= 1) score -= Math.round(200 * w);
         else if(dist <= 2) score -= Math.round(80 * w);
         else score += Math.round(30 * w);
@@ -3777,16 +3781,20 @@ function computeScore(assignment, rows, cols){
       if(r.type==='separate' && r.studentIds.length>=2){
         const [a,b]=[r.studentIds[0],r.studentIds[1]];
         if(seatOf[a]!=null && seatOf[b]!=null){
-          const dist=Math.abs(Math.floor(seatOf[a]/cols)-Math.floor(seatOf[b]/cols))
-                    +Math.abs(seatOf[a]%cols-seatOf[b]%cols);
-          if(dist<=2) score += 2000;
+          const dist=Math.max(
+            Math.abs(Math.floor(seatOf[a]/cols)-Math.floor(seatOf[b]/cols)),
+            Math.abs(seatOf[a]%cols-seatOf[b]%cols)
+          );
+          if(dist<=1) score += 2000;
         }
       } else if(r.type==='good' && r.studentIds.length>=2){
         const [a,b]=[r.studentIds[0],r.studentIds[1]];
         if(seatOf[a]!=null && seatOf[b]!=null){
-          const dist=Math.abs(Math.floor(seatOf[a]/cols)-Math.floor(seatOf[b]/cols))
-                    +Math.abs(seatOf[a]%cols-seatOf[b]%cols);
-          if(dist<=2) score -= 100;
+          const dist=Math.max(
+            Math.abs(Math.floor(seatOf[a]/cols)-Math.floor(seatOf[b]/cols)),
+            Math.abs(seatOf[a]%cols-seatOf[b]%cols)
+          );
+          if(dist<=1) score -= 100;
           else score += 50;
         }
       }
@@ -4806,7 +4814,7 @@ function removeTeacherRelation(id){
 function seatDistance(idxA,idxB){
   const cols=state.grid.cols||6;
   const rA=Math.floor(idxA/cols),cA=idxA%cols,rB=Math.floor(idxB/cols),cB=idxB%cols;
-  return Math.abs(rA-rB)+Math.abs(cA-cB);
+  return Math.max(Math.abs(rA-rB), Math.abs(cA-cB)); // チェビシェフ距離（斜め隣=1）
 }
 
 function renderSeatAnalysis(){
@@ -4824,8 +4832,8 @@ function renderSeatAnalysis(){
   const sName = id=>{ const s=studentById(id); return s ? s.name||s.yomi||numberOnlyLabel(s) : '?'; };
   const rowLabel = idx=>`${Math.floor(idx/cols)+1}行${idx%cols+1}列`;
   const dist = (a,b)=> a!=null&&b!=null
-    ? Math.abs(Math.floor(a/cols)-Math.floor(b/cols)) + Math.abs(a%cols-b%cols)
-    : 999;
+    ? Math.max(Math.abs(Math.floor(a/cols)-Math.floor(b/cols)), Math.abs(a%cols-b%cols))
+    : 999; // チェビシェフ距離（斜め隣=1、周囲8マス=距離1）
 
   // 各学生の「近くにいてほしい人」を集計（条件設定・アンケート・先生メモを合算）
   const wantNearMap = {}; // sid → Set of sids
@@ -4855,7 +4863,14 @@ function renderSeatAnalysis(){
     if(myIdx==null){ nearFriendCount[s.id]=0; return; }
     let cnt=0;
     wantNearMap[s.id].forEach(fid=>{
-      if(dist(myIdx, seatOf[fid]) <= 2) cnt++;
+      const fIdx = seatOf[fid];
+      if(fIdx==null) return;
+      // チェビシェフ距離≤1 = 周囲8マス以内
+      const d = Math.max(
+        Math.abs(Math.floor(myIdx/cols)-Math.floor(fIdx/cols)),
+        Math.abs(myIdx%cols - fIdx%cols)
+      );
+      if(d <= 1) cnt++;
     });
     nearFriendCount[s.id]=cnt;
   });
@@ -4865,9 +4880,9 @@ function renderSeatAnalysis(){
 
   (state.constraints.separate||[]).forEach(([a,b])=>{
     const d = dist(seatOf[a], seatOf[b]);
-    if(d<=2) criticals.push({
+    if(d<=1) criticals.push({
       text: `${sName(a)}（${rowLabel(seatOf[a])}）と ${sName(b)}（${rowLabel(seatOf[b])}）`,
-      sub: `離すべきペアが距離${d}マス以内にいます`,
+      sub: `離すべきペアが周囲8マス以内にいます（距離${d}）`,
       action: '席を入れ替えてください',
       ids:[a,b]
     });
@@ -4909,14 +4924,14 @@ function renderSeatAnalysis(){
       if(d<=1) avoidProblems.push({
         priority: 1,
         text: `${sName(res.studentId)} → ${sName(avoidId)}`,
-        sub: `アンケート：すぐ隣にいます（距離${d}マス）`,
+        sub: `アンケート：周囲8マスの隣にいます（距離${d}）`,
         action: '最優先で離してください',
         ids:[res.studentId,avoidId]
       });
       else if(d<=2) avoidProblems.push({
         priority: 2,
         text: `${sName(res.studentId)} → ${sName(avoidId)}`,
-        sub: `アンケート：近い席です（距離${d}マス）`,
+        sub: `アンケート：やや近い席です（距離${d}）`,
         action: 'できれば離してください',
         ids:[res.studentId,avoidId]
       });
@@ -4927,10 +4942,10 @@ function renderSeatAnalysis(){
     const [a,b]=[r.studentIds[0],r.studentIds[1]];
     if(!a||!b) return;
     const d=dist(seatOf[a],seatOf[b]);
-    if(d<=2) avoidProblems.push({
+    if(d<=1) avoidProblems.push({
       priority: 2,
       text: `${sName(a)} と ${sName(b)}`,
-      sub: `先生メモ「要離す」：距離${d}マス${r.note?' — '+r.note:''}`,
+      sub: `先生メモ「要離す」：周囲8マス以内（距離${d}）${r.note?' — '+r.note:''}`,
       action: 'できれば離してください',
       ids:[a,b]
     });
