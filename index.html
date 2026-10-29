@@ -1346,6 +1346,19 @@
       <div class="tab-content" id="tab-result">
 
         <div id="candidatesSection">
+          <div class="card" id="seatMakeSteps">
+            <h2 style="margin-top:0;border:none;padding-left:0;">席替え案を作る手順</h2>
+            <div style="font-size:13px;font-weight:700;margin-bottom:4px;">① 回答を読み込む</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+              <button class="btn-secondary" onclick="reloadSurveyForSteps()">🔄 最新の回答を読み込む</button>
+              <span id="stepLoadInfo" style="font-size:12px;color:var(--text-sub);"></span>
+            </div>
+            <div style="font-size:13px;font-weight:700;margin-bottom:4px;">② 使うアンケートを選ぶ</div>
+            <div id="stepScopeOptions" style="margin-bottom:12px;"></div>
+            <div style="font-size:13px;font-weight:700;margin-bottom:4px;">③ 確認する</div>
+            <div id="stepCheckInfo" style="font-size:12px;line-height:1.7;margin-bottom:12px;"></div>
+            <div style="font-size:13px;font-weight:700;">④ 下のボタンで3案を作る</div>
+          </div>
           <div class="result-actions" style="gap:8px;flex-wrap:wrap;">
             <button class="btn-primary" style="flex:1;" onclick="generateCandidates()">🎲 条件から3案を自動生成</button>
             <button class="btn-secondary" style="flex:1;" onclick="startManualMode()">✋ 先生が手動で作成</button>
@@ -1682,6 +1695,7 @@ let adminPinVerified = false;
 function defaultSurveySettings(){
   return {
     seatPrefMode: 'rowCircle',
+    surveyScope: 'latest',   // 席替え案に使うアンケート: 'latest'=最新のアンケート / 'all'=すべて / 'none'=使わない
     seatNameMode: 'kanji',
     surveyNameMode: 'yomi',
     surveyTextMode: 'yomi',   // アンケートの表示言語: 'yomi'=ひらがな / 'kanji'=漢字あり
@@ -3440,9 +3454,10 @@ function buildMiniGrid(seatPref, rows, cols){
 }
 
 function renderSurveyResults(){
+  renderSeatSteps();
   const badge = document.getElementById('surveyReadyBadge');
   if(badge){
-    const cnt = (state.surveyResults||[]).length;
+    const cnt = activeSurveyResults().length;
     if(cnt > 0){
       badge.style.display = 'block';
       badge.textContent = `✅ アンケート ${cnt}件 取得済み — 自動生成に反映されます`;
@@ -3537,13 +3552,14 @@ function toggleSurveyMsg(btn){
 }
 
 function reflectFriendsToTogether(){
-  if(!state.surveyResults || state.surveyResults.length===0){
-    alert('アンケート結果がまだ読み込まれていません。');
+  const usedResults = activeSurveyResults();
+  if(usedResults.length===0){
+    alert('使うアンケートの回答がありません。座席表タブの「席替え案を作る手順」で、回答の読み込みと使うアンケートの選択を確かめてください。');
     return;
   }
   let addedTogether = 0, addedSeparate = 0;
 
-  state.surveyResults.forEach(r=>{
+  usedResults.forEach(r=>{
     if(!studentById(r.studentId)) return;
 
     // 仲のよい子・仲良くなりたい子 → 近づけたい
@@ -3622,18 +3638,21 @@ function computeScore(assignment, rows, cols){
   // ① 避けたい相手が近い → ペナルティ（大）
   // ② なかよし/なかよくなりたい相手が近い → ボーナス
   // ③ 希望列に座れているか（rowCircleモード）→ 差に応じたペナルティ
-  if(state.surveyResults && state.surveyResults.length > 0){
-    // 時系列重み付け：最新回答 → 重み大、古い回答 → 重み小
-    const times = state.surveyResults.map(r=>r.submittedAt ? new Date(r.submittedAt).getTime() : 0);
-    const maxT = Math.max(...times, Date.now());
+  const scoringResults = activeSurveyResults();
+  if(scoringResults.length > 0){
+    // 「すべての回答」を選んだ時だけ、古い回答を弱める（最新の回答の時刻を基準にする）。
+    // 「最新のアンケート」を選んだ時は、全員同じ重み
+    const decayOld = currentSurveyScope() === SURVEY_SCOPE.ALL;
+    const times = scoringResults.map(r=>r.submittedAt ? new Date(r.submittedAt).getTime() : 0);
+    const maxT = Math.max(...times);
     const minT = Math.min(...times.filter(t=>t>0), maxT);
     const span = maxT - minT || 1;
 
     const surveyMap = {};
-    state.surveyResults.forEach(r=>{
+    scoringResults.forEach(r=>{
       const t = r.submittedAt ? new Date(r.submittedAt).getTime() : 0;
       const ageRatio = t>0 ? (t-minT)/span : 1; // 0=古い, 1=最新
-      const weight = 0.3 + 0.7 * ageRatio;      // 30%〜100%
+      const weight = decayOld ? 0.3 + 0.7 * ageRatio : 1; // すべて: 30%〜100% / 最新のアンケート: 100%
       // 同じ学生の複数回答がある場合は最新優先でマージ
       if(!surveyMap[r.studentId] || weight > (surveyMap[r.studentId]._w||0)){
         surveyMap[r.studentId] = {...r, _w: weight};
@@ -4029,6 +4048,111 @@ function generateCandidates(){
   renderCandidates();
 }
 
+/* ---------- 席替え案に使うアンケートの選択 ---------- */
+const SURVEY_SCOPE = { LATEST: 'latest', ALL: 'all', NONE: 'none' };
+const SURVEY_SCOPE_LABEL = { latest: '最新のアンケート', all: 'すべての回答', none: 'アンケートなし' };
+
+function currentSurveyScope(){
+  const v = state.surveySettings && state.surveySettings.surveyScope;
+  return SURVEY_SCOPE_LABEL[v] ? v : SURVEY_SCOPE.LATEST;
+}
+
+// 回答を「始めた回」ごとにまとめる（開始時刻が無い古い回答は、日付ごと）
+function groupSurveyBatches(results){
+  const groups = {};
+  (results||[]).forEach(r=>{
+    const key = r.roundStartedAt ? 'r:' + r.roundStartedAt : 'd:' + String(r.submittedAt||'').slice(0,10);
+    if(!groups[key]) groups[key] = {key, responses: [], startIso: r.roundStartedAt || '', label: ''};
+    groups[key].responses.push(r);
+  });
+  return Object.values(groups).map(g=>{
+    const times = g.responses.map(r=>r.submittedAt).filter(Boolean).sort();
+    if(!g.startIso) g.startIso = times[0] || '';
+    g.label = (g.key.startsWith('r:') ? formatShortDate(g.startIso) + ' 開始' : formatShortDate(g.startIso) + ' の回答');
+    return g;
+  }).sort((a,b)=> String(a.startIso).localeCompare(String(b.startIso)));
+}
+
+function latestSurveyBatch(){
+  const groups = groupSurveyBatches(state.surveyResults);
+  return groups.length ? groups[groups.length-1] : null;
+}
+
+// 席替え案づくり・座席チェック・近づけたい／離したいの反映に使う回答
+function activeSurveyResults(){
+  const scope = currentSurveyScope();
+  if(scope === SURVEY_SCOPE.NONE) return [];
+  if(scope === SURVEY_SCOPE.ALL) return state.surveyResults || [];
+  const batch = latestSurveyBatch();
+  return batch ? batch.responses : [];
+}
+
+async function reloadSurveyForSteps(){
+  if(!authToken) return;
+  _lastSurveyFetch = Date.now();
+  const res = await callApi('getSurveyResponses', {token: authToken});
+  if(res && res.success){
+    state.surveyResults = res.results || [];
+    renderSurveyResults();
+    renderSeatSteps();
+    showToast(`回答 ${state.surveyResults.length}件を読み込みました`, 'ok', 2500);
+  }else{
+    showToast((res && res.message) || '読み込みに失敗しました', 'error');
+  }
+}
+
+function setSurveyScope(value){
+  if(!state.surveySettings) state.surveySettings = defaultSurveySettings();
+  state.surveySettings.surveyScope = value;
+  saveState();           // 選んだ範囲はクラスのデータと一緒に保存される
+  renderSeatSteps();
+  renderSurveyResults();
+}
+
+function renderSeatSteps(){
+  const loadEl = document.getElementById('stepLoadInfo');
+  const optEl = document.getElementById('stepScopeOptions');
+  const checkEl = document.getElementById('stepCheckInfo');
+  if(!loadEl || !optEl || !checkEl) return;
+  const all = state.surveyResults || [];
+  const total = (state.students||[]).length;
+  const answered = new Set(all.map(r=>r.studentId)).size;
+  const latestAt = latestSurveyAnswerAt();
+  loadEl.textContent = all.length
+    ? `最新の回答 ${formatDateTimeShort(latestAt)}・${total}人中 ${answered}人が回答`
+    : 'まだ回答を読み込んでいません（または回答がありません）';
+
+  const scope = currentSurveyScope();
+  const batch = latestSurveyBatch();
+  const options = [
+    {v: SURVEY_SCOPE.LATEST, text: batch ? `最新のアンケートだけを使う（${batch.label}・${batch.responses.length}件）` : '最新のアンケートだけを使う（回答なし）'},
+    {v: SURVEY_SCOPE.ALL,    text: `すべての回答を使う（${all.length}件。古いものは弱めて反映）`},
+    {v: SURVEY_SCOPE.NONE,   text: 'アンケートを使わない'}
+  ];
+  optEl.innerHTML = options.map(o=>`<label style="display:block;font-size:13px;margin:3px 0;cursor:pointer;">
+      <input type="radio" name="surveyScopeRadio" value="${o.v}" ${scope===o.v?'checked':''} onchange="setSurveyScope(this.value)"> ${escapeHtml(o.text)}
+    </label>`).join('');
+
+  const used = activeSurveyResults();
+  const usedIds = new Set(used.map(r=>r.studentId));
+  const missing = (state.students||[]).filter(st=>!usedIds.has(st.id));
+  const missingNames = missing.slice(0, 8).map(st=>escapeHtml(st.name||st.yomi||numberOnlyLabel(st))).join('、') + (missing.length>8 ? ` ほか${missing.length-8}名` : '');
+  const c = state.constraints || {};
+  const lines = [];
+  lines.push(scope===SURVEY_SCOPE.NONE ? 'アンケートは使いません。' : `使う回答：${used.length}件`);
+  if(scope!==SURVEY_SCOPE.NONE){
+    lines.push(missing.length===0 ? '全員の回答が揃っています。' : `未回答（希望なしとして扱います）：${missing.length}名　${missingNames}`);
+  }
+  lines.push(`固定席 ${Object.keys(c.fixedSeats||{}).length}件・近づけたい ${(c.together||[]).length}組・離したい ${(c.separate||[]).length}組`);
+  checkEl.innerHTML = lines.join('<br>');
+}
+
+function formatDateTimeShort(iso){
+  const d = new Date(iso);
+  if(isNaN(d.getTime())) return '';
+  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
 /* ---------- 席替えの作成日（新しい席替えだと一目で分かるように） ---------- */
 function formatDateJa(iso){
   const d = new Date(iso);
@@ -4042,8 +4166,8 @@ function formatShortDate(iso){
   return isNaN(d.getTime()) ? '' : `${d.getMonth()+1}/${d.getDate()}`;
 }
 
-function latestSurveyAnswerAt(){
-  const times = (state.surveyResults||[]).map(r=>r.submittedAt).filter(Boolean).sort();
+function latestSurveyAnswerAt(results){
+  const times = (results || state.surveyResults || []).map(r=>r.submittedAt).filter(Boolean).sort();
   return times.length ? times[times.length-1] : '';
 }
 
@@ -4051,15 +4175,16 @@ function latestSurveyAnswerAt(){
 function stampSeatingInfo(){
   state.seatingInfo = {
     madeAt: new Date().toISOString(),
-    surveyCount: (state.surveyResults||[]).length,
-    latestSurveyAt: latestSurveyAnswerAt()
+    surveyScope: currentSurveyScope(),
+    surveyCount: activeSurveyResults().length,
+    latestSurveyAt: latestSurveyAnswerAt(activeSurveyResults())
   };
 }
 
-function describeSurveyBasis(surveyCount, latestSurveyAt){
-  if(!surveyCount) return 'アンケートなし';
+function describeSurveyBasis(surveyCount, latestSurveyAt, scope){
+  if(!surveyCount || scope === SURVEY_SCOPE.NONE) return 'アンケートなし';
   const latest = latestSurveyAt ? `・最新の回答 ${formatShortDate(latestSurveyAt)}` : '';
-  return `アンケート ${surveyCount}件${latest}`;
+  return `${SURVEY_SCOPE_LABEL[scope] || 'アンケート'} ${surveyCount}件${latest}`;
 }
 
 function renderSeatingDateBanner(){
@@ -4069,7 +4194,7 @@ function renderSeatingDateBanner(){
   renderPrintHeader(); // 印刷用の見出しにも作成日を反映
   if(!info || !info.madeAt || !state.currentSeating){ el.style.display = 'none'; return; }
   el.style.display = 'block';
-  el.textContent = `📅 ${formatDateJa(info.madeAt)}に作成　（${describeSurveyBasis(info.surveyCount, info.latestSurveyAt)}）`;
+  el.textContent = `📅 ${formatDateJa(info.madeAt)}に作成　（${describeSurveyBasis(info.surveyCount, info.latestSurveyAt, info.surveyScope)}）`;
 }
 
 function renderCandidatesDateNote(){
@@ -4077,7 +4202,7 @@ function renderCandidatesDateNote(){
   if(!el) return;
   if(!state.candidatesMadeAt || !state.candidates || state.candidates.length===0){ el.style.display = 'none'; return; }
   el.style.display = 'block';
-  el.textContent = `📅 ${formatDateJa(state.candidatesMadeAt)}に作った案です（${describeSurveyBasis((state.surveyResults||[]).length, latestSurveyAnswerAt())}）`;
+  el.textContent = `📅 ${formatDateJa(state.candidatesMadeAt)}に作った案です（${describeSurveyBasis(activeSurveyResults().length, latestSurveyAnswerAt(activeSurveyResults()), currentSurveyScope())}）`;
 }
 
 function renderCandidates(){
@@ -4478,7 +4603,7 @@ function addSeatHistory(label){
     grid: JSON.parse(JSON.stringify(state.grid||{})),
     seatTemplate: JSON.parse(JSON.stringify(state.seatTemplate||[])),
     seating: JSON.parse(JSON.stringify(state.currentSeating)),
-    surveyCount: (state.surveyResults||[]).length, // 参考：アンケート件数
+    surveyCount: activeSurveyResults().length, // 参考：席替えに使ったアンケート件数
   };
   state.seatHistory.unshift(entry);
   if(state.seatHistory.length > SEAT_HISTORY_MAX)
@@ -4827,7 +4952,7 @@ function renderSeatAnalysis(){
     if(wantNearMap[b]) wantNearMap[b].add(a);
   });
   const surveyMap={};
-  (state.surveyResults||[]).forEach(r=>{ surveyMap[r.studentId]=r; });
+  activeSurveyResults().forEach(r=>{ surveyMap[r.studentId]=r; });
   Object.values(surveyMap).forEach(res=>{
     if(!wantNearMap[res.studentId]) return;
     [...(res.friendsGood||[]),...(res.friendsWant||[])].forEach(id=>wantNearMap[res.studentId].add(id));
