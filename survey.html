@@ -218,12 +218,12 @@ textarea{min-height:70px;resize:vertical;}
 // ==============================
 // 設定
 // ==============================
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbzr0IEUmTLdokz7AZBFm8e-50HE1Ay5pumcgNgKLKH453DN9Sa_heLKXv0P-tvOu4hGMg/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbwuhM9EROSYZR3cSiGm3985crx_p5JUKAyWwF6qtNVSXU0HaltWFHa_8yfWCTFI6A05MA/exec';
 
 // ==============================
 // 状態変数
 // ==============================
-let classId = '';
+let surveyCode = ''; // リンクのコード（先生のIDは使わない）
 let surveyConfig = null; // GASから取得した設定
 let studentGender = 'none';   // 現在回答中の児童のgender
 let manualGender  = 'none';   // 手動選択のgender
@@ -276,21 +276,21 @@ function displayName(s){
 // ==============================
 async function init(){
   const params = new URLSearchParams(location.search);
-  classId = params.get('class')||'';
-  if(!classId){
-    showError('URLに「?class=クラスID」が必要です。先生に確認してください。');
+  surveyCode = params.get('code')||'';
+  if(!surveyCode){
+    showError('リンクが正しくありません。先生にリンクをもらってください。');
     return;
   }
 
   // GASからアンケート設定を取得
-  const res = await callApi('getSurveyConfig', {classId});
+  const res = await callApi('getSurveyConfig', {code: surveyCode});
   hide('loadingCard');
   hide('errorCard');
   hide('closedCard');
   hide('surveyDone');
 
   if(!res.success){
-    showError(res.message || 'クラスが見つかりません。リンクを確認してください。');
+    showError(res.message || 'リンクを確認してください。');
     return;
   }
 
@@ -671,7 +671,7 @@ async function submitSurvey(){
   const btn = document.getElementById('submitBtn');
   if(btn){ btn.disabled=true; btn.textContent='おくっています…'; }
 
-  const res = await callApi('submitSurveyResponse', {classId, response:result});
+  const res = await callApi('submitSurveyResponse', {code: surveyCode, response:result});
 
   if(btn){ btn.disabled=false; btn.textContent='📤 かいとうを おくる'; }
 
