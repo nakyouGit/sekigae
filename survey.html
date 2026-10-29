@@ -109,7 +109,7 @@ textarea{min-height:70px;resize:vertical;}
   <div id="surveyDone" class="card" hidden>
     <div class="done-icon">📤</div>
     <h2>ありがとうございました</h2>
-    <div class="msg">かいとうを そうしんしました。</div>
+    <div class="msg" id="doneMsg">かいとうを そうしんしました。</div>
   </div>
 
   <!-- アンケートフォーム -->
@@ -676,6 +676,10 @@ async function submitSurvey(){
   if(btn){ btn.disabled=false; btn.textContent='📤 かいとうを おくる'; }
 
   if(res.success){
+    // 同じ人が送り直した時は、前の回答が新しい回答に置きかわったことを伝える
+    document.getElementById('doneMsg').textContent = res.replaced
+      ? 'まえの かいとうを、あたらしい かいとうに おきかえました。'
+      : 'かいとうを そうしんしました。';
     hide('surveyForm');
     show('surveyDone');
     window.scrollTo(0,0);
