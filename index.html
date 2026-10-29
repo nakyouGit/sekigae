@@ -1352,6 +1352,7 @@
           </div>
           <div class="help">「条件から3案を自動生成」→ 条件とアンケートを踏まえた案を3つ提示します。<br>「先生が手動で作成」→ 名簿から児童を席にドラッグ＆ドロップで自由に配置できます。</div>
           <div id="surveyReadyBadge" style="display:none;margin:4px 0 2px;font-size:12px;color:var(--chalk-green);font-weight:700;"></div>
+          <div id="candidatesDateNote" style="display:none;margin:4px 0 6px;font-size:12px;color:#856404;font-weight:700;"></div>
           <div id="candidatesList"></div>
         </div>
 
@@ -1394,6 +1395,7 @@
         </div>
 
         <div id="finalSection" hidden>
+          <div id="seatingDateBanner" style="display:none;margin-bottom:8px;padding:8px 12px;border-radius:10px;background:#e8f4ed;color:#2d6a3f;font-size:13px;font-weight:700;line-height:1.6;"></div>
           <div class="result-actions" style="flex-wrap:wrap;gap:8px;">
             <button class="btn-secondary" onclick="backToCandidates()">← 案を選び直す</button>
             <button class="btn-secondary" onclick="undoSeating()" id="undoBtn" disabled>↩ 戻す</button>
@@ -2661,6 +2663,9 @@ function renderPrintHeader(){
     if(m) lines.push('男子 '+m+'名');
     if(f) lines.push('女子 '+f+'名');
     if(m&&f) lines.push('計 '+(m+f)+'名');
+  }
+  if(state.seatingInfo && state.seatingInfo.madeAt && state.currentSeating){
+    lines.push('作成日：'+formatDateJa(state.seatingInfo.madeAt));
   }
   // 担当教員名
   if(currentTeacher && currentTeacher.displayName){
@@ -4017,13 +4022,66 @@ function generateCandidates(){
   }
 
   state.candidates = [generateOneCandidate(), generateOneCandidate(), generateOneCandidate()];
+  state.candidatesMadeAt = new Date().toISOString();
   document.getElementById('finalSection').hidden = true;
   document.getElementById('candidatesSection').hidden = false;
   document.getElementById('manualSection').hidden = true;
   renderCandidates();
 }
 
+/* ---------- 席替えの作成日（新しい席替えだと一目で分かるように） ---------- */
+function formatDateJa(iso){
+  const d = new Date(iso);
+  if(isNaN(d.getTime())) return '';
+  const week = '日月火水木金土'[d.getDay()];
+  return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日（${week}）`;
+}
+
+function formatShortDate(iso){
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? '' : `${d.getMonth()+1}/${d.getDate()}`;
+}
+
+function latestSurveyAnswerAt(){
+  const times = (state.surveyResults||[]).map(r=>r.submittedAt).filter(Boolean).sort();
+  return times.length ? times[times.length-1] : '';
+}
+
+// 「この席替えを、いつ、どのアンケートで作ったか」を記録する
+function stampSeatingInfo(){
+  state.seatingInfo = {
+    madeAt: new Date().toISOString(),
+    surveyCount: (state.surveyResults||[]).length,
+    latestSurveyAt: latestSurveyAnswerAt()
+  };
+}
+
+function describeSurveyBasis(surveyCount, latestSurveyAt){
+  if(!surveyCount) return 'アンケートなし';
+  const latest = latestSurveyAt ? `・最新の回答 ${formatShortDate(latestSurveyAt)}` : '';
+  return `アンケート ${surveyCount}件${latest}`;
+}
+
+function renderSeatingDateBanner(){
+  const el = document.getElementById('seatingDateBanner');
+  if(!el) return;
+  const info = state.seatingInfo;
+  renderPrintHeader(); // 印刷用の見出しにも作成日を反映
+  if(!info || !info.madeAt || !state.currentSeating){ el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.textContent = `📅 ${formatDateJa(info.madeAt)}に作成　（${describeSurveyBasis(info.surveyCount, info.latestSurveyAt)}）`;
+}
+
+function renderCandidatesDateNote(){
+  const el = document.getElementById('candidatesDateNote');
+  if(!el) return;
+  if(!state.candidatesMadeAt || !state.candidates || state.candidates.length===0){ el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.textContent = `📅 ${formatDateJa(state.candidatesMadeAt)}に作った案です（${describeSurveyBasis((state.surveyResults||[]).length, latestSurveyAnswerAt())}）`;
+}
+
 function renderCandidates(){
+  renderCandidatesDateNote();
   const rows = state.grid.rows, cols = state.grid.cols;
   const list = document.getElementById('candidatesList');
   if(!state.candidates || state.candidates.length===0){
@@ -4091,6 +4149,7 @@ async function confirmManual(){
   state.seatTemplate = [...manualSeatTpl];
   seatHistory = [];
   state.currentSeating = [...manualSeating];
+  stampSeatingInfo();
   state.candidates = [];
   document.getElementById('manualSection').hidden = true;
   document.getElementById('finalSection').hidden = false;
@@ -4344,6 +4403,7 @@ function chooseCandidate(i){
   if(!state.candidates || !state.candidates[i]) return;
   seatHistory = [];
   state.currentSeating = [...state.candidates[i]];
+  stampSeatingInfo();
   document.getElementById('candidatesSection').hidden = true;
   document.getElementById('finalSection').hidden = false;
   updateUndoBtn();
@@ -4435,7 +4495,8 @@ function renderSeatHistory(){
   }
   el.innerHTML = history.map((entry, i)=>{
     const date = new Date(entry.savedAt);
-    const dateStr = `${date.getFullYear()}/${date.getMonth()+1}/${date.getDate()}`;
+    const dateStr = `${date.getFullYear()}/${date.getMonth()+1}/${date.getDate()} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+    const newestBadge = i===0 ? `<span style="font-size:10px;background:#2d6a3f;color:#fff;border-radius:4px;padding:1px 5px;margin-right:4px;font-weight:700;">最新</span>` : '';
     const cls = entry.classInfo||{};
     const clsLabel = cls.grade&&cls.group ? `${cls.grade}年${cls.group}組` : '';
     const lbl = entry.label ? `<span style="font-weight:800;color:var(--chalk-green);">${escapeHtml(entry.label)}</span>　` : '';
@@ -4445,7 +4506,7 @@ function renderSeatHistory(){
     const prevBadge = isPrev ? `<span style="font-size:10px;background:#fff3cd;color:#856404;border-radius:4px;padding:1px 5px;">前回設定中</span>` : '';
     return `<div class="list-row" style="align-items:center;flex-wrap:wrap;gap:6px;">
       <div style="flex:1;min-width:130px;">
-        <div style="font-size:13px;line-height:1.5;">${i===0?'🕐 ':''}${lbl}${dateStr}${surveyBadge}${prevBadge}</div>
+        <div style="font-size:13px;line-height:1.5;">${newestBadge}${lbl}📅 ${dateStr}${surveyBadge}${prevBadge}</div>
         <div style="font-size:11px;color:var(--text-sub);">${clsLabel} ${(entry.students||[]).length}名</div>
       </div>
       <button class="btn-secondary" style="font-size:11px;" onclick="setAsPrevious(${i})" title="この席替えを『前回』として設定（次回の席替えで同じ席を避ける）">🔄 前回に設定</button>
@@ -5157,6 +5218,7 @@ function onEditChipTap(sid){
 
 /* ---------- render result (final chosen seating) ---------- */
 function renderResult(){
+  renderSeatingDateBanner();
   const grid = document.getElementById('seatGrid');
   const warningsEl = document.getElementById('warnings');
   const rows = state.grid.rows, cols = state.grid.cols;
