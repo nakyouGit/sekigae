@@ -2320,6 +2320,22 @@ async function autoFetchSurveyResults(){
   }catch(e){ /* サイレントに失敗 */ }
 }
 
+/* ---------- アンケート回答の削除 ---------- */
+async function deleteSurveyResult(resultIndex){
+  const target = (state.surveyResults||[])[resultIndex];
+  if(!target) return;
+  const s = state.students.find(st=>st.id===target.studentId);
+  const label = s ? (s.name||s.yomi||numberOnlyLabel(s)) : (target.studentName||'?');
+  const when = target.submittedAt ? '（' + String(target.submittedAt).replace('T',' ').slice(0,16) + ' の回答）' : '';
+  if(!await dlgConfirm(label + ' さんの回答を削除します。' + when + '\n元に戻せません。よろしいですか？', '削除する', true)) return;
+  // 画面の並びが変わっていても、同じ回答だけを消す
+  state.surveyResults = state.surveyResults.filter(r=>!(r.studentId===target.studentId && r.submittedAt===target.submittedAt));
+  renderSurveyResults();
+  renderSeatAnalysis();
+  saveState();
+  showToast('回答を削除しました', 'ok', 2500);
+}
+
 /* ---------- grid size ---------- */
 const rowsInput = document.getElementById('rowsInput');
 const colsInput = document.getElementById('colsInput');
@@ -3442,7 +3458,11 @@ function renderSurveyResults(){
   const minTime = Math.min(...times.filter(t=>t>0), maxTime);
   const timeSpan = maxTime - minTime || 1;
 
-  const cards = state.surveyResults.map(r=>{
+  // 同じ児童の回答が複数並んでいたら、見分けやすいように印を付ける
+  const answerCount = {};
+  state.surveyResults.forEach(r=>{ answerCount[r.studentId] = (answerCount[r.studentId]||0) + 1; });
+
+  const cards = state.surveyResults.map((r, resultIndex)=>{
     const s = state.students.find(st=>st.id===r.studentId);
     const dispName = s ? (s.name||s.yomi||numberOnlyLabel(s)) : (r.studentName||'?');
     const submittedMs = r.submittedAt ? new Date(r.submittedAt).getTime() : 0;
@@ -3481,7 +3501,9 @@ function renderSurveyResults(){
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
         <span style="font-size:13px;font-weight:700;">${escapeHtml(dispName)}</span>
         ${weightLabel}
+        ${answerCount[r.studentId]>1 ? '<span style="background:#f8d7da;color:#721c24;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:700;">同じ児童の回答が複数</span>' : ''}
         <span style="font-size:10px;color:var(--text-sub);margin-left:auto;">${submitted}</span>
+        <button class="btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="deleteSurveyResult(${resultIndex})">🗑 削除</button>
       </div>
       ${miniGrid ? `<div style="margin-bottom:6px;">
         <div style="font-size:10px;color:var(--text-sub);margin-bottom:3px;">🪑 座席希望（下が黒板）</div>
