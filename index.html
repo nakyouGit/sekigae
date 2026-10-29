@@ -738,8 +738,7 @@
     @page{ size:A4 landscape; margin:10mm; }
     body{ background:#fff !important; padding:0 !important; }
     .board, .mode-switch, .tabs, .result-actions, .warnings,
-    .export-row, .chat-log, #aiChatLog, #aiChatInput,
-    #aiChatSwapArea, .edit-bar, #editModeBtn, #undoBtn,
+    .export-row, .chat-log, .edit-bar, #editModeBtn, #undoBtn,
     #editModePanel, button, .floor-note, .preview-note,
     #finalSection > h2, #finalSection > .card,
     #screenLegend, #print-legend { display:none !important; }
@@ -939,20 +938,32 @@
 
         <h2>児童アンケート用リンク</h2>
         <div class="card">
-          <div class="help" style="margin-top:0;">このリンクはいつも同じです。児童に配る前に「名簿を保存」を押してください。名簿や座席の設定を変えたら、もう一度「名簿を保存」を押せば最新の内容が反映されます。</div>
-          <button class="btn-primary" style="width:100%;margin-bottom:10px;" onclick="copySurveyLink()">📋 アンケートリンクをコピー</button>
-          <div class="help" style="margin:0 0 6px;font-size:11px;">名簿を変更したら「変更を保存」を押すと自動でGASに保存されます。リンクはいつも同じです。</div>
-          <div class="copy-row">
-            <input type="text" id="surveyLinkInput" readonly placeholder="上のボタンを押すとリンクが生成されます">
-            <button class="btn-secondary" onclick="copySurveyLink()">コピー</button>
-          </div>
-          <div class="help" id="copyLinkMsg" style="display:none;color:var(--ok);">リンクをコピーしました</div>
-          <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap;">
+          <div class="help" style="margin-top:0;">リンクは長いランダムな文字列で、締め切りが付きます。締め切りを過ぎるか「締め切る」を押すと、児童は回答できなくなります。始める前に名簿を登録してください。</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <span id="surveyStatusBadge" style="font-size:13px;font-weight:700;padding:4px 12px;border-radius:999px;"></span>
-            <button class="btn-secondary" id="surveyCloseBtn" onclick="closeSurvey()" style="background:#e74c3c;color:#fff;">🔒 締め切る</button>
-            <button class="btn-secondary" id="surveyReopenBtn" onclick="reopenSurvey()" style="display:none;">📢 再配布する（やり直し）</button>
+            <span id="surveyDeadlineText" style="font-size:12px;color:var(--text-sub);"></span>
           </div>
           <div class="help" id="surveyStatusHelp" style="margin-top:6px;"></div>
+          <div id="surveyLinkArea" hidden>
+            <div class="copy-row">
+              <input type="text" id="surveyLinkInput" readonly>
+              <button class="btn-secondary" onclick="copySurveyLink()">コピー</button>
+            </div>
+            <div class="help" id="copyLinkMsg" style="display:none;color:var(--ok);">リンクをコピーしました</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center;">
+            <label id="surveyDaysLabel" style="font-size:12px;">受付の日数
+              <select id="surveyDaysSelect">
+                <option value="1">1日</option><option value="3" selected>3日</option>
+                <option value="7">7日</option><option value="14">14日</option>
+              </select>
+            </label>
+            <button class="btn-primary" id="surveyStartBtn" onclick="startSurvey(false)">📢 アンケートを始める</button>
+            <button class="btn-secondary" id="surveyCloseBtn" onclick="closeSurvey()" style="background:#e74c3c;color:#fff;">🔒 締め切る</button>
+            <button class="btn-secondary" id="surveyReopenBtn" onclick="reopenSurvey()">🔓 再開する（あと1日）</button>
+            <button class="btn-secondary" id="surveyRenewBtn" onclick="renewSurveyLink()">🔁 リンクを作り直す</button>
+            <button class="btn-secondary" id="surveyRestartBtn" onclick="startSurvey(true)">🆕 回答を消して新しく始める</button>
+          </div>
         </div>
 
         <h2>教室のサイズ</h2>
@@ -1090,7 +1101,7 @@
 
         <h2>席を固定する（任意）</h2>
         <div class="card">
-          <div class="help">座席表の席をタップして選び、割り当てる児童を選んでください。複数人を別々の席に固定できます。固定した席はAIの自動生成でも変更されません。</div>
+          <div class="help">座席表の席をタップして選び、割り当てる児童を選んでください。複数人を別々の席に固定できます。固定した席は自動生成でも変更されません。</div>
 
           <!-- 固定済みリスト -->
           <div class="pair-list" id="fixedSeatList"></div>
@@ -1129,7 +1140,7 @@
 
         <h2>先生の人間関係メモ</h2>
         <div class="card">
-          <div class="help" style="margin-top:0;">アンケートがなくても先生の主観で入力できます。AI生成時の参考にはなりませんが、座席チェックパネルに表示されます。</div>
+          <div class="help" style="margin-top:0;">アンケートがなくても先生の主観で入力できます。自動生成の参考にはなりませんが、座席チェックパネルに表示されます。</div>
           <div class="pair-form" style="flex-wrap:wrap;gap:6px;align-items:flex-end;">
             <select id="trType" style="width:130px;">
               <option value="good">🟢 なかよし</option>
@@ -1336,10 +1347,10 @@
 
         <div id="candidatesSection">
           <div class="result-actions" style="gap:8px;flex-wrap:wrap;">
-            <button class="btn-primary" style="flex:1;" onclick="generateCandidates()">🎲 AIで3案を自動生成</button>
+            <button class="btn-primary" style="flex:1;" onclick="generateCandidates()">🎲 条件から3案を自動生成</button>
             <button class="btn-secondary" style="flex:1;" onclick="startManualMode()">✋ 先生が手動で作成</button>
           </div>
-          <div class="help">「AIで3案を自動生成」→ 条件とアンケートを踏まえた案を3つ提示します。<br>「先生が手動で作成」→ 名簿から児童を席にドラッグ＆ドロップで自由に配置できます。</div>
+          <div class="help">「条件から3案を自動生成」→ 条件とアンケートを踏まえた案を3つ提示します。<br>「先生が手動で作成」→ 名簿から児童を席にドラッグ＆ドロップで自由に配置できます。</div>
           <div id="surveyReadyBadge" style="display:none;margin:4px 0 2px;font-size:12px;color:var(--chalk-green);font-weight:700;"></div>
           <div id="candidatesList"></div>
         </div>
@@ -1353,7 +1364,7 @@
           <div class="result-actions" style="flex-wrap:wrap;gap:8px;margin-top:0;">
             <button class="btn-secondary" id="manualUndoBtn" onclick="undoManual()" disabled>↩ 1手戻す</button>
             <button class="btn-secondary" onclick="clearManualSeating()">🗑️ 全クリア</button>
-            <button class="btn-secondary" onclick="autoFillRemaining()">⚡ 残りをAIで埋める</button>
+            <button class="btn-secondary" onclick="autoFillRemaining()">⚡ 残りを自動で埋める</button>
           </div>
 
           <div class="help" style="background:#fff8e8;border:1px solid var(--accent);border-radius:10px;padding:8px 12px;margin:8px 0;">
@@ -1431,21 +1442,9 @@
 
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px;">
             <h2 style="margin:0;">📋 座席チェック</h2>
-            <button class="btn-secondary" style="font-size:12px;white-space:nowrap;" onclick="requestAIFix()">🤖 AIに改善を依頼</button>
           </div>
           <div class="card" id="seatCheckPanel">
             <div class="help" style="margin:0;color:var(--text-sub);">座席を確定・変更すると自動的に更新されます。</div>
-          </div>
-
-          <h2>AIとチャットで相談する</h2>
-          <div class="card">
-            <div class="help" style="margin-top:0;">この座席表についてAIとチャットで相談できます。AIが「〇〇さんと△△さんを交換しては？」と提案した場合はボタンで即反映できます。</div>
-            <div id="aiChatLog" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px;max-height:320px;overflow-y:auto;"></div>
-            <div style="display:flex;gap:8px;">
-              <textarea id="aiChatInput" placeholder="例：AさんとBさんは最近もめています。席を離せますか？" style="flex:1;min-height:60px;"></textarea>
-              <button class="btn-primary" style="white-space:nowrap;align-self:flex-end;" onclick="sendAIChat()">送信</button>
-            </div>
-            <div id="aiChatSwapArea" hidden style="margin-top:10px;"></div>
           </div>
 
           <h2>席替え履歴</h2>
@@ -1477,18 +1476,6 @@
           <h2>ログイン履歴（直近）</h2>
           <div class="card">
             <div id="adminLoginHistory"></div>
-          </div>
-
-          <h2>AI相談機能の設定</h2>
-          <div class="card">
-            <div class="help" style="margin-top:0;" id="adminGeminiStatus"></div>
-            <div class="field-group">
-              <label>Gemini APIキー
-                <input type="password" id="adminGeminiKeyInput" placeholder="変更する場合のみ入力">
-              </label>
-            </div>
-            <button class="btn-primary" style="width:100%;" onclick="adminSaveGeminiKey()">保存する</button>
-            <div class="auth-success" id="adminGeminiMsg"></div>
           </div>
 
           <h2>アプリのURL設定（任意）</h2>
@@ -1659,8 +1646,8 @@
 <script>
 /* ---------- state ---------- */
 /* ====================== 設定 ====================== */
-// ここにGASのウェブアプリURL（デプロイ後に取得したURL）を設定してください
-let GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzr0IEUmTLdokz7AZBFm8e-50HE1Ay5pumcgNgKLKH453DN9Sa_heLKXv0P-tvOu4hGMg/exec';
+// 席かえーる専用ガスのウェブアプリURL
+const GAS_API_URL = 'https://script.google.com/macros/s/AKfycbwuhM9EROSYZR3cSiGm3985crx_p5JUKAyWwF6qtNVSXU0HaltWFHa_8yfWCTFI6A05MA/exec';
 
 const AUTH_KEY = 'sekigaeAuthInfo'; // {token, teacherId, role, displayName, email}
 
@@ -1688,7 +1675,6 @@ function clearAuth(){ localStorage.removeItem(AUTH_KEY); }
 let authToken = null;
 let currentTeacher = null; // {teacherId, email, role, displayName}
 let adminPinVerified = false;
-let publicSurveyClassId = null;
 
 /* ====================== state ====================== */
 function defaultSurveySettings(){
@@ -2212,114 +2198,10 @@ async function startApp(){
   document.getElementById('manualSaveBtn').style.display = 'inline-block';
 }
 
-/* ====================== 児童アンケート（公開リンク） ====================== */
-/* ====================== 児童アンケート（新方式：URLデータ埋め込み） ====================== */
-async function initPublicSurveyFromData(encoded){
-  publicSurveyClassId = null;
-  document.getElementById('authScreens').hidden = true;
-  document.getElementById('mainApp').hidden = true;
-  document.getElementById('studentArea').hidden = false;
-  document.getElementById('boardSub').textContent = 'せきについての きぼうを かいて おくりましょう';
-
-  let payload;
-  try {
-    payload = JSON.parse(decodeURIComponent(escape(atob(encoded))));
-  } catch(e) {
-    document.getElementById('publicSurveyForm').innerHTML =
-      '<div class="card"><h2 style="border:none;padding-left:0;">エラー</h2>' +
-      '<div class="help">リンクが正しくありません。先生に確認してください。</div></div>';
-    return;
-  }
-
-  // GAS URLを設定（回答送信用）
-  if(payload.gasUrl) GAS_API_URL = payload.gasUrl;
-  publicSurveyClassId = payload.classId || '';
-
-  // URLに埋め込まれたデータをstateに直接セット（GAS不要）
-  state = defaultState();
-  state.students      = payload.students     || [];
-  state.grid          = payload.grid         || {rows:5, cols:6};
-  state.seatTemplate  = payload.seatTemplate || [];
-  state.surveySettings = Object.assign(defaultSurveySettings(), payload.surveySettings||{});
-  if(!state.surveySettings.questions) state.surveySettings.questions = defaultSurveySettings().questions;
-  if(!state.constraints) state.constraints = defaultState().constraints;
-  state.constraints.fixedSeats = payload.fixedSeats || {};
-  ensureSeatTemplate();
-
-  // 締め切りチェック
-  if(payload.surveyClosed){
-    document.getElementById('publicSurveyForm').innerHTML =
-      '<div class="card" style="text-align:center;padding:24px 16px;">' +
-      '<div style="font-size:40px;margin-bottom:12px;">🔒</div>' +
-      '<h2 style="border:none;padding-left:0;">アンケートは締め切られました</h2>' +
-      '<div class="help" style="margin:0;">先生がアンケートを締め切りました。<br>回答できません。先生に確認してください。</div>' +
-      '</div>';
-    return;
-  }
-
-  switchMode('student');
-  renderStudentSurvey();
-}
-
-/* ====================== 児童アンケート（旧方式：GASから取得） ====================== */
-async function initPublicSurvey(classId){
-  publicSurveyClassId = classId;
-  document.getElementById('authScreens').hidden = true;
-  document.getElementById('mainApp').hidden = true;
-  document.getElementById('studentArea').hidden = false;
-  document.getElementById('boardSub').textContent = 'せきについての きぼうを かいて おくりましょう';
-
-  const res = await callApi('getSurveyConfig', {classId});
-  if(!res.success){
-    document.getElementById('publicSurveyForm').innerHTML =
-      '<div class="card"><h2 style="border:none;padding-left:0;">エラー</h2>' +
-      '<div class="help" style="margin:0;">' + escapeHtml(res.message || 'クラスが見つかりません。リンクを確認してください。') + '</div></div>';
-    return;
-  }
-
-  state = defaultState();
-  state.grid = res.grid || {rows:5, cols:6};
-  state.students = res.students || [];
-  state.seatTemplate = res.seatTemplate || [];
-  const ss = res.surveySettings || {};
-  state.surveySettings = Object.assign(defaultSurveySettings(), ss);
-  if(!state.surveySettings.questions) state.surveySettings.questions = defaultSurveySettings().questions;
-  // 指定席情報を反映（fixedSeatsはconstraints内）
-  if(!state.constraints) state.constraints = defaultState().constraints;
-  state.constraints.fixedSeats = res.fixedSeats || {};
-  ensureSeatTemplate();
-
-  // 締め切りチェック
-  if(state.surveySettings.surveyClosed){
-    document.getElementById('publicSurveyForm').innerHTML =
-      '<div class="card" style="text-align:center;padding:24px 16px;">' +
-      '<div style="font-size:40px;margin-bottom:12px;">🔒</div>' +
-      '<h2 style="border:none;padding-left:0;">アンケートは締め切られました</h2>' +
-      '<div class="help" style="margin:0;">先生がアンケートを締め切りました。<br>回答できません。先生に確認してください。</div>' +
-      '</div>';
-    return;
-  }
-
-  const header = document.getElementById('publicSurveyTeacherLabel');
-  if(header){
-    if(res.teacherName){
-      header.textContent = res.teacherName + ' せんせいの クラス';
-      header.style.display = 'block';
-    }else{
-      header.style.display = 'none';
-    }
-  }
-
-  document.getElementById('surveySubmitHelp').textContent = '「おくる」を おすと、かいとうが せんせいに とどきます。';
-
-  renderStudentSurvey();
-}
-
 /* ====================== 初期化 ====================== */
 function init(){
   const params = new URLSearchParams(location.search);
-  const classId   = params.get('class');
-  const encoded   = params.get('d');
+  const surveyCode = params.get('code');
   const resetToken = params.get('reset');
 
   if(resetToken){
@@ -2327,17 +2209,10 @@ function init(){
     showAuthScreen('resetpw');
   }
 
-  // ?class= でアクセスされた場合は児童用ページ（survey.html）にリダイレクト
-  if(classId){
+  // ?code= でアクセスされた場合は児童用ページ（survey.html）へ
+  if(surveyCode){
     const base = location.origin + location.pathname.replace(/[^/]*$/, '');
-    location.replace(base + 'survey.html?class=' + encodeURIComponent(classId));
-    return;
-  }
-
-  // 旧方式（後方互換）：?d= 埋め込みデータも survey.html へ
-  if(encoded){
-    const base = location.origin + location.pathname.replace(/[^/]*$/, '');
-    location.replace(base + 'survey.html?d=' + encoded);
+    location.replace(base + 'survey.html?code=' + encodeURIComponent(surveyCode));
     return;
   }
 
@@ -3549,7 +3424,7 @@ function renderSurveyResults(){
     const cnt = (state.surveyResults||[]).length;
     if(cnt > 0){
       badge.style.display = 'block';
-      badge.textContent = `✅ アンケート ${cnt}件 取得済み — AI生成に反映されます`;
+      badge.textContent = `✅ アンケート ${cnt}件 取得済み — 自動生成に反映されます`;
     } else { badge.style.display = 'none'; }
   }
 
@@ -3618,7 +3493,7 @@ function renderSurveyResults(){
   }).join('');
 
   el.innerHTML = `<div style="margin-bottom:6px;font-size:11px;color:var(--text-sub);">
-    最新の回答を重視してAI生成に反映します。古い回答は薄く表示されます。
+    最新の回答を重視して自動生成に反映します。古い回答は薄く表示されます。
   </div>` + cards;
 }
 
@@ -4199,9 +4074,6 @@ async function confirmManual(){
   document.getElementById('finalSection').hidden = false;
   document.getElementById('candidatesSection').hidden = true;
   document.getElementById('manualSection').hidden = true;
-  aiChatHistory = [];
-  document.getElementById('aiChatLog').innerHTML = '';
-  document.getElementById('aiChatSwapArea').hidden = true;
   updateUndoBtn();
   renderResult();
   saveState();
@@ -4452,9 +4324,6 @@ function chooseCandidate(i){
   state.currentSeating = [...state.candidates[i]];
   document.getElementById('candidatesSection').hidden = true;
   document.getElementById('finalSection').hidden = false;
-  aiChatHistory = [];
-  document.getElementById('aiChatLog').innerHTML = '';
-  document.getElementById('aiChatSwapArea').hidden = true;
   updateUndoBtn();
   renderResult();
   saveState();
@@ -4584,7 +4453,7 @@ async function setAsPrevious(idx){
   const entry = (state.seatHistory||[])[idx];
   if(!entry) return;
   const lbl = entry.label ? `「${entry.label}」` : new Date(entry.savedAt).toLocaleDateString('ja-JP');
-  const ok = await dlgConfirm(`${lbl} の座席を「前回の席替え」として設定します。\n次回AI生成時に、同じ席を避けるようになります。`, '設定する');
+  const ok = await dlgConfirm(`${lbl} の座席を「前回の席替え」として設定します。\n次回の自動生成時に、同じ席を避けるようになります。`, '設定する');
   if(!ok) return;
   const newPrev = {};
   (entry.seating||[]).forEach((sid,idx2)=>{ if(sid) newPrev[sid]=idx2; });
@@ -4848,7 +4717,7 @@ function seatDistance(idxA,idxB){
   return Math.max(Math.abs(rA-rB), Math.abs(cA-cB)); // チェビシェフ距離（斜め隣=1）
 }
 
-// 最後に収集したチェック結果（AIに依頼ボタンで使用）
+// 最後に収集したチェック結果（座席チェックで使用）
 let _lastSeatIssues = [];
 
 function renderSeatAnalysis(){
@@ -5000,7 +4869,7 @@ function renderSeatAnalysis(){
     infos.push(`📝 【先生メモ】${sids}${r.note?' — '+r.note:''}`);
   });
 
-  // AI依頼用に保持
+  // 座席チェック結果を保持
   _lastSeatIssues=[...criticals,...avoidProblems,...lonelyStudents.map(l=>({
     text:l.name+'（'+l.pos+'）',sub:'近くに友達0人。候補：'+l.candidates.join('、')
   }))];
@@ -5100,24 +4969,6 @@ async function showSeatEvidence(idx){
   await showDialog('📋 エビデンス詳細',`<div style="text-align:left;font-size:12px;line-height:1.6;">${content}</div>`,
     [{label:'閉じる',cls:'dialog-ok',value:null}]);
 }
-
-/* ── AIに座席改善を依頼 ── */
-async function requestAIFix(){
-  if(!state.currentSeating||state.currentSeating.filter(Boolean).length===0){
-    showToast('先に座席を確定してください','error');return;
-  }
-  if(!_lastSeatIssues||_lastSeatIssues.length===0){
-    showToast('座席チェックに問題がありません','ok');return;
-  }
-  const issueText=_lastSeatIssues.slice(0,8).map((item,i)=>`${i+1}. ${item.text}：${item.sub}`).join('\n');
-  const prompt=`座席チェックで以下の問題が見つかりました。具体的な席の入れ替え案を提案してください。\n\n${issueText}`;
-  document.getElementById('aiChatInput').value=prompt;
-  document.getElementById('aiChatLog').scrollIntoView({behavior:'smooth',block:'start'});
-  await new Promise(r=>setTimeout(r,400));
-  sendAIChat();
-}
-
-
 
 function printTeacherView(){
   if(!state.currentSeating || state.currentSeating.filter(Boolean).length===0){
@@ -5938,25 +5789,8 @@ async function submitSurvey(){
     submittedAt: new Date().toISOString()
   };
 
-  if(!publicSurveyClassId){
-    alert('これは先生によるプレビューです。実際の回答は「児童アンケート用リンク」から行ってください。');
-    return;
-  }
-
-  const submitBtn = document.querySelector('#surveyPage2 .btn-primary');
-  if(submitBtn){ submitBtn.disabled = true; submitBtn.textContent = 'おくっています…'; }
-
-  const res = await callApi('submitSurveyResponse', {classId: publicSurveyClassId, response: result});
-
-  if(submitBtn){ submitBtn.disabled = false; submitBtn.textContent = '📤 かいとうを おくる'; }
-
-  if(res.success){
-    document.getElementById('publicSurveyForm').hidden = true;
-    document.getElementById('publicSurveyDone').hidden = false;
-    window.scrollTo(0,0);
-  }else{
-    alert('おくれませんでした。インターネットの つながりを たしかめて、もう いちど ためしてください。\n(' + (res.message||'') + ')');
-  }
+  // この画面は先生のプレビュー専用。実際の回答は survey.html（児童用リンク）で受け付ける
+  alert('これは先生によるプレビューです。実際の回答は「児童アンケート用リンク」から行ってください。');
 }
 
 /* ---------- init ---------- */
@@ -5973,104 +5807,125 @@ function renderAccountInfo(){
   }
 }
 
-function copySurveyLink(){
-  const input = document.getElementById('surveyLinkInput');
-  if(!input || !input.value){ showToast('先にログインしてください','error'); return; }
-  navigator.clipboard.writeText(input.value)
-    .then(()=>showToast('リンクをコピーしました。児童に送ってください。','ok',3000))
-    .catch(()=>{
-      // フォールバック：テキスト選択
-      input.select();
-      document.execCommand('copy');
-      showToast('リンクをコピーしました','ok',2000);
-    });
+/* ---------- アンケートの受付（サーバーが期限とリンクを管理する） ---------- */
+const SURVEY_UI = { REOPEN_DAYS: 1, DEFAULT_DAYS: 3 };
+let surveyRound = null; // {code, deadline, closed, open} / まだ始めていなければ null
+
+function surveyLinkFor(code){
+  const base = location.origin + location.pathname.replace(/[^/]*$/, '');
+  return base + 'survey.html?code=' + encodeURIComponent(code);
+}
+
+function formatDeadline(iso){
+  const d = new Date(iso);
+  if(isNaN(d.getTime())) return '';
+  return d.toLocaleString('ja-JP', {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'});
+}
+
+async function refreshSurveyRound(){
+  if(!authToken) return;
+  const res = await callApi('surveyStatus', {token: authToken});
+  if(res && res.success){ surveyRound = res.round || null; }
+  renderSurveyStatus();
 }
 
 function renderSurveyLink(){
   if(!currentTeacher) return;
-  const classId = currentTeacher.uid || currentTeacher.teacherId || '';
-  // 児童用ページ（survey.html）への固定リンク
-  const base = location.origin + location.pathname.replace(/[^/]*$/, '');
-  const url = base + 'survey.html?class=' + encodeURIComponent(classId);
-  const input = document.getElementById('surveyLinkInput');
-  if(input) input.value = url;
-  renderSurveyStatus();
+  refreshSurveyRound();
 }
 
-async function generateSurveyLink(){
+function setSurveyBadge(text, bg, fg){
+  const badge = document.getElementById('surveyStatusBadge');
+  badge.textContent = text;
+  badge.style.cssText = 'font-size:13px;font-weight:700;padding:4px 12px;border-radius:999px;background:'+bg+';color:'+fg+';';
+}
+
+function renderSurveyStatus(){
+  if(!document.getElementById('surveyStatusBadge')) return;
+  const r = surveyRound;
+  const show = (id, on)=>{ const el=document.getElementById(id); if(el) el.style.display = on ? '' : 'none'; };
+  const help = document.getElementById('surveyStatusHelp');
+  const dl = document.getElementById('surveyDeadlineText');
+  const area = document.getElementById('surveyLinkArea');
+  if(!r){
+    setSurveyBadge('⚪ まだ始めていません', '#eee', '#555');
+    help.textContent = '「アンケートを始める」を押すと、児童に配るリンクができます。';
+    dl.textContent = '';
+    area.hidden = true;
+  }else if(r.open){
+    setSurveyBadge('✅ 受付中', '#d4edda', '#155724');
+    help.textContent = '回答が集まったら「締め切る」を押してください。';
+    dl.textContent = '締め切り：' + formatDeadline(r.deadline);
+    area.hidden = false;
+    document.getElementById('surveyLinkInput').value = surveyLinkFor(r.code);
+  }else{
+    setSurveyBadge('🔒 締め切り済み', '#f8d7da', '#721c24');
+    help.textContent = '児童は回答できません。「再開する」で同じリンクのまま受付を戻せます。';
+    dl.textContent = r.closed ? '手動で締め切りました' : '期限が過ぎました（' + formatDeadline(r.deadline) + '）';
+    area.hidden = false;
+    document.getElementById('surveyLinkInput').value = surveyLinkFor(r.code);
+  }
+  show('surveyStartBtn', !r);
+  show('surveyDaysLabel', !r || !r.open);
+  show('surveyCloseBtn', !!(r && r.open));
+  show('surveyReopenBtn', !!(r && !r.open));
+  show('surveyRenewBtn', !!r);
+  show('surveyRestartBtn', !!r);
+}
+
+async function applySurveyResult(res, okMessage){
+  if(res && res.success){
+    surveyRound = res.round || null;
+    renderSurveyStatus();
+    showToast(okMessage, 'ok', 3000);
+    return true;
+  }
+  showToast((res && res.message) || '操作に失敗しました', 'error');
+  return false;
+}
+
+async function startSurvey(clearResponses){
   if(!currentTeacher){ showToast('ログインが必要です','error'); return; }
   if(!state.students || state.students.length===0){
     showToast('先に名簿を登録してください','error'); return;
   }
-  // 最新データをGASに保存してからリンクを表示
+  if(clearResponses && !await dlgConfirm('これまでの回答を全部消して、新しいアンケートを始めます。\n古いリンクは使えなくなります。よろしいですか？', '新しく始める', true)) return;
+  // 児童の画面は名簿を保存済みのデータから読むので、先に保存する
   setSaveIndicator('saving', '💾 保存中…');
-  const res = await callApi('saveClassData', {token: authToken, data: state});
-  if(!(res && res.success)){
+  const saved = await callApi('saveClassData', {token: authToken, data: state});
+  if(!(saved && saved.success)){
     setSaveIndicator('error', '⚠️ 保存に失敗しました');
     showToast('保存に失敗しました。もう一度お試しください。', 'error');
     return;
   }
   setSaveIndicator('saved', '✅ 保存しました');
-  renderSurveyLink();
-  showToast('保存しました。このリンクを児童に配ってください。', 'ok', 3500);
-}
-
-function renderSurveyStatus(){
-  const closed = !!(state.surveySettings && state.surveySettings.surveyClosed);
-  const badge  = document.getElementById('surveyStatusBadge');
-  const help   = document.getElementById('surveyStatusHelp');
-  const closeBtn  = document.getElementById('surveyCloseBtn');
-  const reopenBtn = document.getElementById('surveyReopenBtn');
-  if(!badge) return;
-  if(closed){
-    badge.textContent  = '🔒 締め切り中';
-    badge.style.cssText= 'font-size:13px;font-weight:700;padding:4px 12px;border-radius:999px;background:#f8d7da;color:#721c24;';
-    if(help)   help.textContent = '現在、児童はアンケートに回答できません。「再配布する」を押すと回答を受け付けます。';
-    if(closeBtn)  closeBtn.style.display  = 'none';
-    if(reopenBtn) reopenBtn.style.display = '';
-  }else{
-    badge.textContent  = '✅ 受付中';
-    badge.style.cssText= 'font-size:13px;font-weight:700;padding:4px 12px;border-radius:999px;background:#d4edda;color:#155724;';
-    if(help)   help.textContent = '現在、児童はアンケートに回答できます。回答が集まったら「締め切る」を押してください。';
-    if(closeBtn)  closeBtn.style.display  = '';
-    if(reopenBtn) reopenBtn.style.display = 'none';
+  const days = parseInt(document.getElementById('surveyDaysSelect').value, 10) || SURVEY_UI.DEFAULT_DAYS;
+  const res = await callApi('surveyStart', {token: authToken, days, clearResponses: !!clearResponses});
+  if(await applySurveyResult(res, 'アンケートを始めました。リンクを児童に配ってください。') && clearResponses){
+    state.surveyResults = [];
+    renderSurveyResults();
   }
 }
 
 async function closeSurvey(){
-  if(!await dlgConfirm('アンケートを締め切ります。\n児童はアンケートに回答できなくなります。よろしいですか？', '締め切る', true)) return;
-  if(!state.surveySettings) state.surveySettings = defaultSurveySettings();
-  state.surveySettings.surveyClosed = true;
-  renderSurveyStatus();
-  saveState();
-  showToast('アンケートを締め切りました', 'ok');
+  if(!await dlgConfirm('アンケートを締め切ります。\n児童は回答できなくなります。よろしいですか？', '締め切る', true)) return;
+  applySurveyResult(await callApi('surveyClose', {token: authToken}), 'アンケートを締め切りました');
 }
 
 async function reopenSurvey(){
-  const choice = await showDialog('アンケートを再配布', 'アンケートをやり直しますか？', [
-    {label:'キャンセル', cls:'dialog-cancel', value:null},
-    {label:'回答を残して再開', cls:'dialog-ok', value:'keep'},
-    {label:'回答をリセットして再開', cls:'dialog-danger', value:'reset'},
-  ]);
-  if(!choice) return;
-  if(!state.surveySettings) state.surveySettings = defaultSurveySettings();
-  state.surveySettings.surveyClosed = false;
-  if(choice==='reset'){
-    // GASのアンケート結果もクリア
-    await callApi('clearSurveyResponses', {token: authToken});
-    state.surveyResults = [];
-    renderSurveyResults();
-    showToast('回答をリセットしてアンケートを再開しました', 'ok');
-  }else{
-    showToast('アンケートを再開しました（回答は引き継ぎ）', 'ok');
-  }
-  renderSurveyStatus();
-  saveState();
+  const res = await callApi('surveyReopen', {token: authToken, days: SURVEY_UI.REOPEN_DAYS});
+  applySurveyResult(res, '同じリンクで受付を再開しました（あと' + SURVEY_UI.REOPEN_DAYS + '日）');
+}
+
+async function renewSurveyLink(){
+  if(!await dlgConfirm('リンクを新しく作り直します。\n古いリンクは使えなくなり、回答は残ります。よろしいですか？', '作り直す', true)) return;
+  applySurveyResult(await callApi('surveyRenewLink', {token: authToken}), '新しいリンクを作りました。配り直してください。');
 }
 
 function copySurveyLink(){
   const input = document.getElementById('surveyLinkInput');
   const msg = document.getElementById('copyLinkMsg');
+  if(!input.value){ showToast('先にアンケートを始めてください','error'); return; }
   const showMsg = ()=>{ msg.style.display='block'; setTimeout(()=>msg.style.display='none', 2000); };
   if(navigator.clipboard && navigator.clipboard.writeText){
     navigator.clipboard.writeText(input.value).then(showMsg).catch(()=>{
@@ -6082,174 +5937,6 @@ function copySurveyLink(){
     input.select();
     document.execCommand('copy');
     showMsg();
-  }
-}
-
-/* ---------- AIチャット ---------- */
-let aiChatHistory = []; // [{role:'user'|'assistant', content:''}]
-
-function buildSeatContext(){
-  const rows = state.grid.rows, cols = state.grid.cols;
-  const seatList = (state.currentSeating||[]).map((sid, idx)=>{
-    if(state.seatTemplate[idx]==='disabled') return null;
-    const s = sid ? studentById(sid) : null;
-    return seatLabel(idx, cols) + ': ' + (s ? (s.name||s.yomi||"?") + (s.gender==='male'?'(男子)':s.gender==='female'?'(女子)':'') : '空席');
-  }).filter(Boolean).join('\n');
-
-  const sepList = state.constraints.separate.map(([a,b])=>{
-    const sa=studentById(a), sb=studentById(b);
-    return (sa&&sb) ? sa.name+'と'+sb.name : null;
-  }).filter(Boolean).join('、');
-
-  const togList = state.constraints.together.map(([a,b])=>{
-    const sa=studentById(a), sb=studentById(b);
-    return (sa&&sb) ? sa.name+'と'+sb.name : null;
-  }).filter(Boolean).join('、');
-
-  return '【教室】' + rows + '行×' + cols + '列\n' +
-    '【現在の座席表】\n' + seatList + '\n' +
-    (sepList ? '【離したい児童】' + sepList + '\n' : '') +
-    (togList ? '【近づけたい児童】' + togList + '\n' : '') +
-    '---\n' +
-    'あなたは小学校の席替えを助けるAIアシスタントです。先生の相談に日本語で具体的に答えてください。\n' +
-    '児童を交換することを提案するときは、必ず「【交換提案】Aさん（○行○列）↔ Bさん（○行○列）」という形式で書いてください（AIが複数提案する場合はそれぞれ1行）。';
-}
-
-function addChatBubble(role, text){
-  const log = document.getElementById('aiChatLog');
-  const div = document.createElement('div');
-  div.style.cssText = role==='user'
-    ? 'align-self:flex-end;background:#4a7c59;color:#fff;padding:8px 12px;border-radius:12px 12px 2px 12px;max-width:85%;font-size:13px;line-height:1.5;white-space:pre-wrap;'
-    : 'align-self:flex-start;background:#f0ece6;color:#3d3529;padding:8px 12px;border-radius:12px 12px 12px 2px;max-width:90%;font-size:13px;line-height:1.6;white-space:pre-wrap;';
-  div.textContent = text;
-  log.appendChild(div);
-  log.scrollTop = log.scrollHeight;
-  return div;
-}
-
-function parseSwapProposals(text){
-  const proposals = [];
-  const re = /【交換提案】([^\（]+)（([^）]+)）\s*↔\s*([^\（]+)（([^）]+)）/g;
-  let m;
-  while((m=re.exec(text))!==null){
-    proposals.push({
-      nameA: m[1].trim(), posA: m[2].trim(),
-      nameB: m[3].trim(), posB: m[4].trim()
-    });
-  }
-  return proposals;
-}
-
-function findSeatByLabel(label){
-  const cols = state.grid.cols;
-  const match = label.match(/(\d+)行(\d+)列/);
-  if(!match) return -1;
-  const r = parseInt(match[1])-1, c = parseInt(match[2])-1;
-  return r*cols + c;
-}
-
-function renderSwapProposals(proposals){
-  const area = document.getElementById('aiChatSwapArea');
-  if(!proposals || proposals.length===0){ area.hidden=true; return; }
-  area.hidden = false;
-  area.innerHTML = '<div style="font-size:13px;font-weight:700;margin-bottom:6px;color:var(--chalk-green);">💡 交換提案があります：</div>' +
-    proposals.map((p,i)=>`
-      <div class="list-row" style="margin-bottom:4px;flex-wrap:wrap;gap:4px;">
-        <span style="flex:1;font-size:13px;">${escapeHtml(p.nameA)}（${escapeHtml(p.posA)}）↔ ${escapeHtml(p.nameB)}（${escapeHtml(p.posB)}）</span>
-        <button class="btn-secondary" style="font-size:12px;background:#e8f4ed;" onclick="confirmSwap(${i})">✅ 実行する</button>
-      </div>
-    `).join('');
-  area._proposals = proposals;
-}
-
-async function confirmSwap(i){
-  const area = document.getElementById('aiChatSwapArea');
-  const proposals = area._proposals;
-  if(!proposals || !proposals[i]) return;
-  const p = proposals[i];
-  // ワンクッション確認
-  const ok = await dlgConfirm(
-    `「${p.nameA}」と「${p.nameB}」の席を入れ替えますか？\n\n${p.nameA}：${p.posA}\n${p.nameB}：${p.posB}`,
-    '入れ替える'
-  );
-  if(!ok) return;
-  applySwap(i);
-}
-
-function applySwap(i){
-  const area = document.getElementById('aiChatSwapArea');
-  const proposals = area._proposals;
-  if(!proposals || !proposals[i]) return;
-  const p = proposals[i];
-  const idxA = findSeatByLabel(p.posA);
-  const idxB = findSeatByLabel(p.posB);
-  if(idxA<0 || idxB<0){
-    alert('席の位置を特定できませんでした。手動で入れ替えてください。');
-    return;
-  }
-  pushHistory();
-  const tmp = state.currentSeating[idxA];
-  state.currentSeating[idxA] = state.currentSeating[idxB];
-  state.currentSeating[idxB] = tmp;
-  renderResult();
-  saveState();
-  addChatBubble('assistant', `✅ ${p.nameA}さんと${p.nameB}さんの席を入れ替えました。`);
-  // 実行済みボタンを無効化
-  const btns = area.querySelectorAll('button');
-  btns.forEach(b=>{ b.disabled=true; b.textContent='実行済み'; b.style.opacity='0.5'; });
-}
-
-async function sendAIChat(){
-  const input = document.getElementById('aiChatInput');
-  const prompt = (input.value||'').trim();
-  if(!prompt) return;
-  if(!state.currentSeating || state.currentSeating.filter(Boolean).length===0){
-    addChatBubble('assistant', '先に座席案を「この案に決定する」で選んでください。');
-    return;
-  }
-
-  input.value = '';
-  addChatBubble('user', prompt);
-  aiChatHistory.push({role:'user', content: prompt});
-
-  // thinking表示
-  const thinkingEl = document.createElement('div');
-  thinkingEl.style.cssText = 'align-self:flex-start;background:#f0ece6;color:#888;padding:8px 12px;border-radius:12px;font-size:13px;';
-  thinkingEl.textContent = '💭 考えています…';
-  document.getElementById('aiChatLog').appendChild(thinkingEl);
-  document.getElementById('aiChatLog').scrollTop = document.getElementById('aiChatLog').scrollHeight;
-
-  // 送信ボタンを無効化
-  const sendBtn = document.querySelector('button[onclick="sendAIChat()"]');
-  if(sendBtn) sendBtn.disabled = true;
-
-  try{
-    // GAS経由でGemini APIを呼ぶ（有料枠：履歴16件・gemini-2.5-pro）
-    const systemContext = buildSeatContext();
-    const res = await callApi('aiConsult', {
-      token: authToken,
-      context: systemContext,
-      prompt: prompt,
-      chatHistory: aiChatHistory.slice(-16) // 有料枠：直近16件送信
-    });
-
-    thinkingEl.remove();
-
-    if(res.success){
-      const text = res.text || '';
-      addChatBubble('assistant', text);
-      aiChatHistory.push({role:'assistant', content: text});
-      const proposals = parseSwapProposals(text);
-      renderSwapProposals(proposals);
-    } else {
-      const msg = res.message || '通信に失敗しました';
-      addChatBubble('assistant', '⚠️ ' + msg);
-    }
-  } catch(e) {
-    thinkingEl.remove();
-    addChatBubble('assistant', '⚠️ エラー: ' + e.message);
-  } finally {
-    if(sendBtn) sendBtn.disabled = false;
   }
 }
 
@@ -6336,10 +6023,6 @@ async function renderAdminLoginHistory(){
 async function renderAdminSettings(){
   const res = await callApi('adminGetSettings', {token: authToken});
   if(!res.success) return;
-  const statusEl = document.getElementById('adminGeminiStatus');
-  statusEl.textContent = res.hasGeminiKey
-    ? 'Gemini APIキーは設定済みです。'
-    : 'Gemini APIキーはまだ設定されていません。';
   document.getElementById('adminAppUrlInput').value = '';
   const regLabel = document.getElementById('adminRegPassLabel');
   if(regLabel) regLabel.textContent = '現在の登録用パスフレーズ: ' + (res.regPassphrase || '（取得できませんでした）');
@@ -6358,21 +6041,6 @@ async function adminChangeRegPass(){
     renderAdminSettings();
   }else{
     alert(res.message || '変更に失敗しました');
-  }
-}
-
-async function adminSaveGeminiKey(){
-  const apiKey = document.getElementById('adminGeminiKeyInput').value.trim();
-  if(!apiKey){ alert('APIキーを入力してください。'); return; }
-  const res = await callApi('adminSetGeminiKey', {token: authToken, apiKey});
-  const msg = document.getElementById('adminGeminiMsg');
-  if(res.success){
-    msg.textContent = res.message;
-    msg.style.display = 'block';
-    document.getElementById('adminGeminiKeyInput').value = '';
-    renderAdminSettings();
-  }else{
-    alert(res.message || '保存に失敗しました');
   }
 }
 
