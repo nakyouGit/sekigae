@@ -1342,6 +1342,12 @@
           </div>
           <div class="help">「AIで3案を自動生成」→ 条件とアンケートを踏まえた案を3つ提示します。<br>「先生が手動で作成」→ 名簿から児童を席にドラッグ＆ドロップで自由に配置できます。</div>
           <div id="surveyReadyBadge" style="display:none;margin:4px 0 2px;font-size:12px;color:var(--chalk-green);font-weight:700;"></div>
+          <details class="card" style="margin:8px 0;padding:8px 12px;">
+            <summary style="cursor:pointer;font-weight:700;">📋 席の案を取り込む（出席番号の一覧から）</summary>
+            <div class="help" style="margin-top:6px;">1行が座席表の1行です。左から右へ出席番号を空白で区切って並べ、使わない席は「-」と書きます。行数と列数は教室の設定に合わせてください。</div>
+            <textarea id="seatPlanImportText" rows="7" style="width:100%;font-size:15px;box-sizing:border-box;" placeholder="18 29 11 25 2 8&#10;17 5 28 16 15 21&#10;..."></textarea>
+            <button class="btn-primary" style="width:100%;margin-top:6px;" onclick="importSeatPlan()">この案を取り込む</button>
+          </details>
           <div id="candidatesList"></div>
         </div>
 
@@ -4186,6 +4192,7 @@ function generateCandidates(){
     return;
   }
 
+  importedCandidateIndexes.clear();
   state.candidates = [generateOneCandidate(), generateOneCandidate(), generateOneCandidate()];
   document.getElementById('finalSection').hidden = true;
   document.getElementById('candidatesSection').hidden = false;
@@ -4208,7 +4215,7 @@ function renderCandidates(){
       : '✅ すべての条件を満たしています';
     return `
       <div class="card candidate-card">
-        <h2>案${i+1}</h2>
+        <h2>${importedCandidateIndexes.has(i) ? '取り込んだ案' : '案'+(i+1)}</h2>
         <div class="blackboard-label">⬛ 黒板（前）</div>
         <div style="display:flex;gap:10px;font-size:10.5px;margin-bottom:5px;align-items:center;">
           <span style="display:flex;align-items:center;gap:3px;"><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#a8d4f0;border:1px solid #5ca8d8;"></span>男子</span>
@@ -4220,6 +4227,71 @@ function renderCandidates(){
       </div>
     `;
   }).join('');
+}
+
+/* ====================== 席の案の取り込み ====================== */
+const SEAT_PLAN_EMPTY_TOKENS = ['-', 'x', '×', 'ー', '―', '−'];
+const SEAT_PLAN_TOKEN_SEPARATOR = /[\s,、，]+/;
+const SEAT_PLAN_BRACKETS = /[\[\]()（）「」]/g;
+const SEAT_PLAN_MAX_ERROR_LINES = 6;
+const importedCandidateIndexes = new Set();
+
+// 取り込み用の文字を座席配列（seatIndex -> studentId|null）に変える。画面には触れない。
+function parseSeatPlanText(text, rows, cols, students, seatTemplate){
+  const errors = [];
+  const lines = String(text||'').normalize('NFKC').split(/\r?\n/).map(l=>l.trim()).filter(l=>l!=='');
+  if(lines.length !== rows){
+    return { assignment:null, errors:[`行数が合いません（教室は${rows}行、入力は${lines.length}行）`], unplaced:[] };
+  }
+  const idByNumber = new Map();
+  students.forEach(s=>{ if(s.number!=='' && s.number!=null) idByNumber.set(String(s.number), s.id); });
+  const assignment = new Array(rows*cols).fill(null);
+  const seen = new Set();
+  lines.forEach((line, r)=>{
+    const tokens = line.replace(SEAT_PLAN_BRACKETS,' ').trim().split(SEAT_PLAN_TOKEN_SEPARATOR);
+    if(tokens.length !== cols){
+      errors.push(`${r+1}行目の列数が合いません（教室は${cols}列、入力は${tokens.length}個）`);
+      return;
+    }
+    tokens.forEach((token, c)=>{
+      const idx = r*cols + c;
+      const where = `${r+1}行${c+1}列目`;
+      if(SEAT_PLAN_EMPTY_TOKENS.includes(token.toLowerCase())) return;
+      if(seatTemplate[idx]==='disabled'){ errors.push(`${where}は「使わない席」ですが「${token}」が入っています`); return; }
+      const sid = idByNumber.get(String(parseInt(token,10)));
+      if(!/^\d+$/.test(token) || !sid){ errors.push(`${where}の「${token}」は名簿にない番号です`); return; }
+      if(seen.has(sid)){ errors.push(`${token}番が2回出ています（${where}）`); return; }
+      seen.add(sid);
+      assignment[idx] = sid;
+    });
+  });
+  const unplaced = students.filter(s=>!seen.has(s.id)).map(numberOnlyLabel);
+  return { assignment: errors.length ? null : assignment, errors, unplaced };
+}
+
+async function importSeatPlan(){
+  const box = document.getElementById('seatPlanImportText');
+  if(state.students.length===0){ alert('名簿に児童が登録されていません。「クラス設定」タブで追加してください。'); return; }
+  ensureSeatTemplate();
+  const result = parseSeatPlanText(box.value, state.grid.rows, state.grid.cols, state.students, state.seatTemplate);
+  if(!result.assignment){
+    const shown = result.errors.slice(0, SEAT_PLAN_MAX_ERROR_LINES);
+    const more = result.errors.length - shown.length;
+    alert('取り込めませんでした。\n' + shown.join('\n') + (more>0 ? `\nほか${more}件` : ''));
+    return;
+  }
+  if(result.unplaced.length>0){
+    const ok = await dlgConfirm(`席に入っていない児童がいます（${result.unplaced.join('、')}）。このまま取り込みますか？`, '取り込む');
+    if(!ok) return;
+  }
+  state.candidates = [result.assignment];
+  importedCandidateIndexes.clear();
+  importedCandidateIndexes.add(0);
+  document.getElementById('finalSection').hidden = true;
+  document.getElementById('manualSection').hidden = true;
+  document.getElementById('candidatesSection').hidden = false;
+  renderCandidates();
+  showToast('取り込みました。内容を確かめて「この案に決定する」を押してください');
 }
 
 /* ====================== 先生手動作成モード ====================== */
