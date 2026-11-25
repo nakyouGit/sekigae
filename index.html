@@ -1324,6 +1324,7 @@
           <div class="help">児童が「児童アンケート用リンク」から回答すると、ここに自動で届きます。</div>
           <div class="export-row">
             <button class="btn-secondary" onclick="loadSurveyResults()">結果を読み込む・更新する</button>
+            <button class="btn-secondary" onclick="downloadSurveyCsv()">CSVで保存</button>
             <button class="btn-add" onclick="reflectFriendsToTogether()">「近づけたい」「離したい」に反映する</button>
             <button class="btn-secondary" onclick="clearSurveyResults()">結果をクリア</button>
           </div>
@@ -3516,6 +3517,72 @@ function formatSeatPref(seatPref){
     return seatPref.ranked.map((idx,i)=>`第${i+1}希望:${seatLabel(idx, state.grid.cols)}`).join(' / ');
   }
   return 'なし';
+}
+
+/* ── アンケート結果：CSV保存（児童の名前は入れず、友だちは出席番号で書く） ── */
+const SURVEY_CSV_HEADERS = ['出席番号','座席の希望','仲のよい子','仲良くなりたい子','離れたい子','前の席の希望','一言','回答日時','席の行数','席の列数'];
+const SURVEY_CSV_BOM = '﻿';
+const SURVEY_CSV_LINE_BREAK = '\r\n';
+const SURVEY_CSV_LIST_SEPARATOR = ' ';
+const SURVEY_CSV_UNKNOWN_NUMBER = '?';
+const SURVEY_CSV_FILE_PREFIX = 'アンケート結果';
+const SURVEY_CSV_REVOKE_DELAY_MS = 1000;
+
+function csvEscapeCell(value){
+  let text = (value === undefined || value === null) ? '' : String(value);
+  if(/^[=+\-@\t\r]/.test(text)) text = "'" + text;
+  return /[",\r\n]/.test(text) ? '"' + text.replace(/"/g, '""') + '"' : text;
+}
+
+function studentNumberLabel(studentId){
+  const s = studentById(studentId);
+  return (s && s.number) ? String(s.number) : SURVEY_CSV_UNKNOWN_NUMBER;
+}
+
+function joinStudentNumbers(ids){
+  return (ids || []).map(studentNumberLabel).join(SURVEY_CSV_LIST_SEPARATOR);
+}
+
+function buildSurveyCsv(results, grid){
+  const sorted = results.slice().sort((a, b) =>
+    (parseInt(studentNumberLabel(a.studentId)) || 0) - (parseInt(studentNumberLabel(b.studentId)) || 0));
+  const lines = [SURVEY_CSV_HEADERS].concat(sorted.map(r => [
+    studentNumberLabel(r.studentId),
+    formatSeatPref(r.seatPref),
+    joinStudentNumbers(r.friendsGood || r.friends),
+    joinStudentNumbers(r.friendsWant),
+    joinStudentNumbers(r.friendsAvoid),
+    r.wantPrevSeat ? 'はい' : '',
+    r.message || '',
+    r.submittedAt || '',
+    grid.rows,
+    grid.cols
+  ]));
+  return SURVEY_CSV_BOM + lines.map(cells => cells.map(csvEscapeCell).join(',')).join(SURVEY_CSV_LINE_BREAK);
+}
+
+function surveyCsvFileName(){
+  const ci = state.classInfo || {};
+  const className = ci.grade && ci.group ? (ci.grade + '年' + ci.group + '組') : (ci.grade ? ci.grade + '年' : '');
+  const d = new Date();
+  const ymd = d.getFullYear() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  return [SURVEY_CSV_FILE_PREFIX, className, ymd].filter(Boolean).join('_').replace(/[\\/:*?"<>|]/g, '') + '.csv';
+}
+
+function downloadSurveyCsv(){
+  if(!state.surveyResults || state.surveyResults.length === 0){
+    showToast('先に「結果を読み込む・更新する」を押してください');
+    return;
+  }
+  const blob = new Blob([buildSurveyCsv(state.surveyResults, state.grid)], {type: 'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = surveyCsvFileName();
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(url), SURVEY_CSV_REVOKE_DELAY_MS);
 }
 
 /* ── アンケート結果：ミニグリッド生成 ─────────────────────── */
